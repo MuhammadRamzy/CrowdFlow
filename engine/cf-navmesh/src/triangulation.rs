@@ -45,15 +45,21 @@ pub struct Triangle {
     /// `n[i]` is the triangle across the edge opposite vertex `v[i]`,
     /// or [`NO_NEIGHBOUR`].
     pub n: [TriIdx; 3],
+    /// `constrained[i]` marks the edge opposite vertex `v[i]` as a constraint
+    /// edge — a wall. Agents may not path across it, and the mesh refinement
+    /// may not flip it. Derived from [`Triangulation::constraints`] by
+    /// [`Triangulation::rebuild_adjacency`].
+    pub constrained: [bool; 3],
     /// Tombstone. Compacted away by [`Triangulation::compact`].
     pub deleted: bool,
 }
 
 impl Triangle {
-    fn new(a: VertIdx, b: VertIdx, c: VertIdx) -> Self {
+    pub(crate) fn new(a: VertIdx, b: VertIdx, c: VertIdx) -> Self {
         Self {
             v: [a, b, c],
             n: [NO_NEIGHBOUR; 3],
+            constrained: [false; 3],
             deleted: false,
         }
     }
@@ -115,8 +121,22 @@ pub struct Triangulation {
     /// build. After [`Triangulation::compact`] only the input points remain.
     pub points: Vec<Vec2>,
     pub triangles: Vec<Triangle>,
+    /// Constraint edges as normalised `(min, max)` vertex pairs. The
+    /// authoritative record; per-triangle `constrained` flags are derived from
+    /// this, so the two can never disagree.
+    pub constraints: std::collections::HashSet<(VertIdx, VertIdx)>,
     /// Number of original input points, i.e. where the super-triangle starts.
-    num_input: usize,
+    pub(crate) num_input: usize,
+}
+
+/// Normalise a vertex pair so an edge has one representation regardless of
+/// which direction it was discovered from.
+pub fn edge_key(a: VertIdx, b: VertIdx) -> (VertIdx, VertIdx) {
+    if a < b {
+        (a, b)
+    } else {
+        (b, a)
+    }
 }
 
 impl Triangulation {
@@ -147,10 +167,11 @@ impl Triangulation {
     }
 }
 
-/// Build the Delaunay triangulation of a point set.
+/// Build the Delaunay triangulation, leaving the super-triangle in place.
 ///
-/// Points must be distinct — see [`TriangulationError::DuplicatePoint`].
-pub fn triangulate(points: &[Vec2]) -> Result<Triangulation, TriangulationError> {
+/// Constraint insertion runs against this state; call
+/// [`Triangulation::remove_super_triangle`] afterwards.
+pub(crate) fn triangulate_raw(points: &[Vec2]) -> Result<Triangulation, TriangulationError> {
     if points.len() < 3 {
         return Err(TriangulationError::TooFewPoints(points.len()));
     }
@@ -181,6 +202,7 @@ pub fn triangulate(points: &[Vec2]) -> Result<Triangulation, TriangulationError>
     let mut t = Triangulation {
         points: points.to_vec(),
         triangles: Vec::with_capacity(num_input * 2 + 8),
+        constraints: std::collections::HashSet::new(),
         num_input,
     };
 
@@ -203,15 +225,80 @@ pub fn triangulate(points: &[Vec2]) -> Result<Triangulation, TriangulationError>
         insert_point(&mut t, v);
     }
 
-    // Discard everything still attached to the super-triangle.
-    for tri in &mut t.triangles {
-        if tri.v.iter().any(|v| *v >= num_input) {
-            tri.deleted = true;
+    Ok(t)
+}
+
+/// Build the Delaunay triangulation of a point set.
+///
+/// Points must be distinct — see [`TriangulationError::DuplicatePoint`].
+pub fn triangulate(points: &[Vec2]) -> Result<Triangulation, TriangulationError> {
+    let mut t = triangulate_raw(points)?;
+    t.remove_super_triangle();
+    Ok(t)
+}
+
+impl Triangulation {
+    /// Discard every triangle still attached to the super-triangle.
+    ///
+    /// Must run *after* constraint insertion: a constraint walk that reaches
+    /// the convex hull needs the surrounding triangles to still exist.
+    pub fn remove_super_triangle(&mut self) {
+        let n = self.num_input;
+        for tri in &mut self.triangles {
+            if tri.v.iter().any(|v| *v >= n) {
+                tri.deleted = true;
+            }
+        }
+        drop_dangling_neighbours(self);
+    }
+
+    /// Rebuild every neighbour link and constraint flag from scratch by hashing
+    /// edges.
+    ///
+    /// Incremental re-linking during constraint insertion is where CDT
+    /// implementations usually go wrong — the bookkeeping has many cases and a
+    /// single missed one produces a mesh that looks fine until an agent walks
+    /// through a wall. This is O(triangles), runs once per compile rather than
+    /// per frame, and cannot get out of step with reality.
+    pub fn rebuild_adjacency(&mut self) {
+        use std::collections::HashMap;
+
+        let mut edge_owner: HashMap<(VertIdx, VertIdx), Vec<(TriIdx, usize)>> = HashMap::new();
+        for (idx, tri) in self.triangles.iter().enumerate() {
+            if tri.deleted {
+                continue;
+            }
+            for i in 0..3 {
+                let (a, b) = tri.edge(i);
+                edge_owner.entry(edge_key(a, b)).or_default().push((idx, i));
+            }
+        }
+
+        for tri in &mut self.triangles {
+            tri.n = [NO_NEIGHBOUR; 3];
+            tri.constrained = [false; 3];
+        }
+
+        for (key, owners) in &edge_owner {
+            // A manifold mesh has at most two triangles per edge.
+            if owners.len() == 2 {
+                let (t0, i0) = owners[0];
+                let (t1, i1) = owners[1];
+                self.triangles[t0].n[i0] = t1;
+                self.triangles[t1].n[i1] = t0;
+            }
+            if self.constraints.contains(key) {
+                for &(ti, i) in owners {
+                    self.triangles[ti].constrained[i] = true;
+                }
+            }
         }
     }
-    drop_dangling_neighbours(&mut t);
 
-    Ok(t)
+    /// Is the edge opposite vertex `i` of triangle `t` a constraint?
+    pub fn is_constrained(&self, t: TriIdx, i: usize) -> bool {
+        self.triangles[t].constrained[i]
+    }
 }
 
 /// Insert one vertex by the Bowyer–Watson cavity method.

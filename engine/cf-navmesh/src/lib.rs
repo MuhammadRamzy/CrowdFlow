@@ -13,7 +13,8 @@
 //! ## Status
 //!
 //! - [`triangulation`] — unconstrained Delaunay (Bowyer–Watson). **Done.**
-//! - Constraint edge insertion — next.
+//! - [`constraint`] — constraint edge insertion. **Done.**
+//! - Region classification (which triangles are walkable) — next.
 //! - Refinement, portals, funnel, flow fields — after that.
 //!
 //! Constraint insertion is deliberately a separate step built on a verified
@@ -21,8 +22,11 @@
 //! to attribute: a bad mesh could be the cavity logic or the constraint walk,
 //! and the symptoms look identical.
 
+pub mod constraint;
 pub mod triangulation;
 
+pub use constraint::{insert_constraint, triangulate_constrained, CdtError, ConstraintError};
 pub use triangulation::{
-    triangulate, TriIdx, Triangle, Triangulation, TriangulationError, VertIdx, NO_NEIGHBOUR,
+    edge_key, triangulate, TriIdx, Triangle, Triangulation, TriangulationError, VertIdx,
+    NO_NEIGHBOUR,
 };
