@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "cfs.venue/1.0",
+  "id": "vnu_hall_two_doors",
+  "name": "Hall with two doors",
+  "units": {
+    "length": "m"
+  },
+  "layers": [
+    {
+      "id": "lay_struct",
+      "name": "Structure",
+      "visible": true,
+      "locked": false,
+      "z": 0,
+      "kind": "normal"
+    }
+  ],
+  "floors": [
+    {
+      "id": "f0",
+      "name": "Ground",
+      "elevationM": 0.0,
+      "ceilingM": 4.5,
+      "walls": [
+        {
+          "id": "w_north",
+          "layer": "lay_struct",
+          "polyline": [[0.0, 12.0], [20.0, 12.0]],
+          "thicknessM": 0.23,
+          "kind": "structural",
+          "permeable": false
+        },
+        {
+          "id": "w_east",
+          "layer": "lay_struct",
+          "polyline": [[20.0, 12.0], [20.0, 0.0]],
+          "thicknessM": 0.23,
+          "kind": "structural",
+          "permeable": false
+        },
+        {
+          "id": "w_south",
+          "layer": "lay_struct",
+          "polyline": [[20.0, 0.0], [0.0, 0.0]],
+          "thicknessM": 0.23,
+          "kind": "structural",
+          "permeable": false
+        },
+        {
+          "id": "w_west",
+          "layer": "lay_struct",
+          "polyline": [[0.0, 0.0], [0.0, 12.0]],
+          "thicknessM": 0.23,
+          "kind": "structural",
+          "permeable": false
+        }
+      ],
+      "openings": [
+        {
+          "id": "op_east_door",
+          "wall": "w_south",
+          "t": 0.25,
+          "widthM": 1.8,
+          "kind": "doubleDoor",
+          "swing": "outward",
+          "isFireExit": true,
+          "capacityFactor": 1.0
+        },
+        {
+          "id": "op_west_door",
+          "wall": "w_south",
+          "t": 0.75,
+          "widthM": 1.8,
+          "kind": "doubleDoor",
+          "swing": "outward",
+          "isFireExit": true,
+          "capacityFactor": 1.0
+        }
+      ],
+      "zones": [
+        {
+          "id": "z_hall",
+          "name": "Main hall",
+          "layer": "lay_struct",
+          "polygon": [[0.0, 0.0], [20.0, 0.0], [20.0, 12.0], [0.0, 12.0]],
+          "kind": "assemblyConcentrated",
+          "speedMultiplier": 1.0,
+          "isVoid": false
+        }
+      ]
+    }
+  ],
+  "routing": {}
+}

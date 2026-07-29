@@ -1,0 +1,976 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ScenarioDoc",
+  "type": "object",
+  "required": [
+    "durationS",
+    "id",
+    "name",
+    "populations",
+    "schemaVersion",
+    "seed",
+    "venueVersion"
+  ],
+  "properties": {
+    "compliance": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ComplianceConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "durationS": {
+      "type": "number",
+      "format": "double"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/TimedEvent"
+      }
+    },
+    "id": {
+      "type": "string"
+    },
+    "mode": {
+      "default": "eventFlow",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SimMode"
+        }
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "output": {
+      "default": {
+        "densityGridM": 0.5,
+        "densityBucketS": 5.0,
+        "trajectorySampleRate": 0.02,
+        "trajectoryHz": 2.0
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/OutputConfig"
+        }
+      ]
+    },
+    "populations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Population"
+      }
+    },
+    "schemaVersion": {
+      "type": "string"
+    },
+    "seed": {
+      "description": "Master PRNG seed. Same seed + same inputs must produce a bit-identical run on every target — see docs/04-track-b-simulation-engine.md §5.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "timestepS": {
+      "default": 0.05,
+      "type": "number",
+      "format": "double"
+    },
+    "venueVersion": {
+      "description": "The exact venue version this scenario was authored against.",
+      "type": "string"
+    }
+  },
+  "definitions": {
+    "AgentProfile": {
+      "description": "Per-agent parameter distributions.\n\nDefaults are drawn from the pedestrian dynamics literature (Weidmann's 1.34 m/s mean free walking speed, ~0.23 m shoulder radius) so that an unconfigured population is already defensible rather than arbitrary.",
+      "type": "object",
+      "properties": {
+        "desiredSpeed": {
+          "default": {
+            "dist": "normal",
+            "mean": 1.34,
+            "sd": 0.26,
+            "min": 0.6,
+            "max": 2.2
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/Distribution"
+            }
+          ]
+        },
+        "familiarity": {
+          "description": "0.0 = follows signage only, 1.0 = knows every route in the venue.",
+          "default": 0.6,
+          "type": "number",
+          "format": "double"
+        },
+        "groupSize": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "massKg": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mobilityImpairedFrac": {
+          "default": 0.0,
+          "type": "number",
+          "format": "double"
+        },
+        "patienceS": {
+          "description": "Seconds an agent will queue before considering an alternative.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "radiusM": {
+          "default": {
+            "dist": "normal",
+            "mean": 0.23,
+            "sd": 0.02,
+            "min": 0.18,
+            "max": 0.3
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/Distribution"
+            }
+          ]
+        },
+        "reactionTimeS": {
+          "description": "Pre-movement delay after an alarm. Evacuation mode only.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "AlarmScope": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "all"
+          ]
+        },
+        {
+          "type": "object",
+          "required": [
+            "floor"
+          ],
+          "properties": {
+            "floor": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "zone"
+          ],
+          "properties": {
+            "zone": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Arrival": {
+      "description": "How agents enter the simulation.",
+      "oneOf": [
+        {
+          "description": "Cumulative arrival curve: `points` are `(t_seconds, cumulative_fraction)`, monotonically non-decreasing in both, ending at fraction 1.0.",
+          "type": "object",
+          "required": [
+            "entries",
+            "kind",
+            "points"
+          ],
+          "properties": {
+            "entries": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/EntryWeight"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "curve"
+              ]
+            },
+            "points": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "format": "double"
+                },
+                "maxItems": 2,
+                "minItems": 2
+              }
+            }
+          }
+        },
+        {
+          "description": "Constant rate over the whole duration.",
+          "type": "object",
+          "required": [
+            "entries",
+            "kind"
+          ],
+          "properties": {
+            "entries": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/EntryWeight"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "uniform"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Everyone present at t=0, distributed across zones. The starting condition for an evacuation study.",
+          "type": "object",
+          "required": [
+            "kind",
+            "zones"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "preplaced"
+              ]
+            },
+            "zones": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ZoneWeight"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ComplianceConfig": {
+      "type": "object",
+      "required": [
+        "codes"
+      ],
+      "properties": {
+        "codes": {
+          "description": "Rule packs to evaluate, e.g. `[\"NFPA101\", \"GreenGuide\"]`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "occupancyBasis": {
+          "default": "simulated",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OccupancyBasis"
+            }
+          ]
+        },
+        "targetEgressS": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      }
+    },
+    "Distribution": {
+      "description": "A sampleable distribution.\n\nSerialised as an internally-tagged union on the `dist` field, e.g. `{\"dist\":\"normal\",\"mean\":1.34,\"sd\":0.26,\"min\":0.6,\"max\":2.2}`.",
+      "oneOf": [
+        {
+          "description": "A fixed value. Useful for pinning a parameter during sensitivity analysis.",
+          "type": "object",
+          "required": [
+            "dist",
+            "value"
+          ],
+          "properties": {
+            "dist": {
+              "type": "string",
+              "enum": [
+                "constant"
+              ]
+            },
+            "value": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "dist",
+            "max",
+            "min"
+          ],
+          "properties": {
+            "dist": {
+              "type": "string",
+              "enum": [
+                "uniform"
+              ]
+            },
+            "max": {
+              "type": "number",
+              "format": "double"
+            },
+            "min": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "dist",
+            "mean",
+            "sd"
+          ],
+          "properties": {
+            "dist": {
+              "type": "string",
+              "enum": [
+                "normal"
+              ]
+            },
+            "max": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "mean": {
+              "type": "number",
+              "format": "double"
+            },
+            "min": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "sd": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Parameterised by the mean and sd **of the underlying normal**, not of the resulting variate. Named `muLn`/`sigmaLn` rather than `mu`/`sigma` so the distinction is impossible to miss at a call site — getting this wrong is the single most common modelling error with lognormals.\n\nNote: `rename_all` on the enum renames *variants*, not their fields, so multi-word fields need their own attribute.",
+          "type": "object",
+          "required": [
+            "dist",
+            "muLn",
+            "sigmaLn"
+          ],
+          "properties": {
+            "dist": {
+              "type": "string",
+              "enum": [
+                "lognormal"
+              ]
+            },
+            "max": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "min": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "muLn": {
+              "type": "number",
+              "format": "double"
+            },
+            "sigmaLn": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "dist",
+            "lambda"
+          ],
+          "properties": {
+            "dist": {
+              "type": "string",
+              "enum": [
+                "exponential"
+              ]
+            },
+            "lambda": {
+              "type": "number",
+              "format": "double"
+            },
+            "max": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Discrete outcomes with weights. Weights need not sum to 1; they are normalised. Keys are strings so that group sizes (`\"1\"`, `\"2\"`, …) and named categories share one representation.",
+          "type": "object",
+          "required": [
+            "dist",
+            "p"
+          ],
+          "properties": {
+            "dist": {
+              "type": "string",
+              "enum": [
+                "categorical"
+              ]
+            },
+            "p": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number",
+                "format": "double"
+              }
+            }
+          }
+        },
+        {
+          "description": "Empirical distribution over observed samples, sampled by linear interpolation of the order statistics.",
+          "type": "object",
+          "required": [
+            "dist",
+            "samples"
+          ],
+          "properties": {
+            "dist": {
+              "type": "string",
+              "enum": [
+                "empirical"
+              ]
+            },
+            "samples": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "EgressPolicy": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "nearestAvailable",
+            "assignedExit"
+          ]
+        },
+        {
+          "description": "Use the exit the agent originally entered by — models the well-documented tendency to leave the way you came in, which usually worsens egress time.",
+          "type": "string",
+          "enum": [
+            "familiarRoute"
+          ]
+        }
+      ]
+    },
+    "EntryWeight": {
+      "type": "object",
+      "required": [
+        "opening"
+      ],
+      "properties": {
+        "opening": {
+          "type": "string"
+        },
+        "weight": {
+          "default": 1.0,
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "Goal": {
+      "description": "A destination.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "id",
+            "target"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string",
+              "enum": [
+                "zone"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "id",
+            "target"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string",
+              "enum": [
+                "component"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "id",
+            "target"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string",
+              "enum": [
+                "waypoint"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "id",
+            "target"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string",
+              "enum": [
+                "opening"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Nearest exit by traversable distance, recomputed if blocked.",
+          "type": "object",
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "target": {
+              "type": "string",
+              "enum": [
+                "nearestExit"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "ItineraryStep": {
+      "description": "One leg of an agent's plan.",
+      "type": "object",
+      "required": [
+        "goal"
+      ],
+      "properties": {
+        "dwell": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "goal": {
+          "$ref": "#/definitions/Goal"
+        },
+        "probability": {
+          "description": "Fraction of the population that performs this step. Defaults to all.",
+          "default": 1.0,
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "OccupancyBasis": {
+      "oneOf": [
+        {
+          "description": "Use the peak occupancy the simulation actually produced.",
+          "type": "string",
+          "enum": [
+            "simulated"
+          ]
+        },
+        {
+          "description": "Use the code-derived occupant load regardless of simulated population.",
+          "type": "string",
+          "enum": [
+            "declared"
+          ]
+        }
+      ]
+    },
+    "OutputConfig": {
+      "description": "Controls the size and resolution of run artifacts.\n\nDefaults are chosen so a 100k-agent 30-minute run produces well under 150 MB rather than the ~1.4 GB that storing raw per-tick positions would cost (docs/02-data-model.md §6).",
+      "type": "object",
+      "properties": {
+        "densityBucketS": {
+          "description": "Temporal bucket for density accumulation, in seconds.",
+          "default": 5.0,
+          "type": "number",
+          "format": "double"
+        },
+        "densityGridM": {
+          "description": "Density/dwell grid cell size in metres.",
+          "default": 0.5,
+          "type": "number",
+          "format": "double"
+        },
+        "trajectoryHz": {
+          "default": 2.0,
+          "type": "number",
+          "format": "double"
+        },
+        "trajectorySampleRate": {
+          "description": "Fraction of agents whose full trajectory is recorded, 0.0–1.0.",
+          "default": 0.02,
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "Population": {
+      "type": "object",
+      "required": [
+        "arrival",
+        "count",
+        "id",
+        "label",
+        "profile"
+      ],
+      "properties": {
+        "access": {
+          "description": "Access tags these agents carry, matched against zone and component rules.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "arrival": {
+          "$ref": "#/definitions/Arrival"
+        },
+        "count": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "id": {
+          "type": "string"
+        },
+        "itinerary": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ItineraryStep"
+          }
+        },
+        "label": {
+          "type": "string"
+        },
+        "profile": {
+          "$ref": "#/definitions/AgentProfile"
+        }
+      }
+    },
+    "SimMode": {
+      "oneOf": [
+        {
+          "description": "Normal operations under the authored arrival curve.",
+          "type": "string",
+          "enum": [
+            "eventFlow"
+          ]
+        },
+        {
+          "description": "Stress test at theoretical maximum occupancy.",
+          "type": "string",
+          "enum": [
+            "peakLoad"
+          ]
+        },
+        {
+          "description": "Alarm-driven egress. Alters urgency, personal space, patience and wayfinding — see docs/04-track-b-simulation-engine.md §B4.",
+          "type": "string",
+          "enum": [
+            "evacuation"
+          ]
+        }
+      ]
+    },
+    "TimedEvent": {
+      "description": "A scheduled change to the world mid-run.",
+      "type": "object",
+      "oneOf": [
+        {
+          "description": "Trigger evacuation behaviour.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "egressPolicy": {
+              "default": "nearestAvailable",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/EgressPolicy"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "alarm"
+              ]
+            },
+            "scope": {
+              "default": "all",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AlarmScope"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "target"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "closeOpening"
+              ]
+            },
+            "target": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "target"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "openOpening"
+              ]
+            },
+            "target": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "target"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "blockLink"
+              ]
+            },
+            "target": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "target"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "unblockLink"
+              ]
+            },
+            "target": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "target"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "closeComponent"
+              ]
+            },
+            "target": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "target"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "openComponent"
+              ]
+            },
+            "target": {
+              "type": "string"
+            }
+          }
+        }
+      ],
+      "required": [
+        "atS"
+      ],
+      "properties": {
+        "atS": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "ZoneWeight": {
+      "type": "object",
+      "required": [
+        "zone"
+      ],
+      "properties": {
+        "weight": {
+          "default": 1.0,
+          "type": "number",
+          "format": "double"
+        },
+        "zone": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

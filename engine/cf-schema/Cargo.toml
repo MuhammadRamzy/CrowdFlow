@@ -1,0 +1,18 @@
+[package]
+name = "cf-schema"
+description = "Canonical data contract for CrowdFlow Studio: Venue, Scenario and Run documents."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+thiserror.workspace = true
+
+[[bin]]
+name = "gen-schema"
+path = "src/bin/gen_schema.rs"

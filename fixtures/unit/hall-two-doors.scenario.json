@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "cfs.scenario/1.0",
+  "id": "scn_hall_egress",
+  "name": "Hall egress — 500 agents",
+  "venueVersion": "ver_hall_two_doors_v1",
+  "mode": "evacuation",
+  "durationS": 300.0,
+  "timestepS": 0.05,
+  "seed": 20260803,
+  "populations": [
+    {
+      "id": "pop_ga",
+      "label": "General admission",
+      "count": 500,
+      "profile": {
+        "desiredSpeed": {
+          "dist": "normal",
+          "mean": 1.34,
+          "sd": 0.26,
+          "min": 0.6,
+          "max": 2.2
+        },
+        "radiusM": {
+          "dist": "normal",
+          "mean": 0.23,
+          "sd": 0.02,
+          "min": 0.18,
+          "max": 0.3
+        },
+        "familiarity": 0.6,
+        "mobilityImpairedFrac": 0.03,
+        "reactionTimeS": {
+          "dist": "lognormal",
+          "muLn": 2.3,
+          "sigmaLn": 0.6,
+          "max": 120.0
+        }
+      },
+      "arrival": {
+        "kind": "preplaced",
+        "zones": [
+          {
+            "zone": "z_hall",
+            "weight": 1.0
+          }
+        ]
+      },
+      "itinerary": [
+        {
+          "goal": {
+            "target": "nearestExit"
+          },
+          "probability": 1.0
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "atS": 10.0,
+      "kind": "alarm",
+      "scope": "all",
+      "egressPolicy": "nearestAvailable"
+    }
+  ],
+  "compliance": {
+    "codes": ["NFPA101", "GreenGuide"],
+    "targetEgressS": 480.0,
+    "occupancyBasis": "simulated"
+  },
+  "output": {
+    "densityGridM": 0.5,
+    "densityBucketS": 5.0,
+    "trajectorySampleRate": 0.02,
+    "trajectoryHz": 2.0
+  }
+}

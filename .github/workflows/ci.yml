@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  rust:
+    name: Rust — fmt, clippy, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --all-features
+
+  # Gate G1 (docs/01-architecture.md §6): schema/ is generated from
+  # engine/cf-schema and must never drift from it. A change to the Rust types
+  # without a regenerated schema is what silently breaks the other track.
+  schema-drift:
+    name: Gate G1 — schema is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Regenerate schema
+        run: cargo run -p cf-schema --bin gen-schema
+
+      - name: Fail if regeneration changed anything
+        run: |
+          if ! git diff --exit-code -- schema/; then
+            echo ""
+            echo "::error::schema/ is out of date with engine/cf-schema."
+            echo "Run: cargo run -p cf-schema --bin gen-schema"
+            echo "and commit the result alongside your type changes."
+            exit 1
+          fi
+
+  # Gate G2 (docs/04-track-b-simulation-engine.md §5): the same inputs must
+  # produce bit-identical results on every target. Currently this only proves
+  # the schema layer parses and validates identically; it grows teeth once
+  # cf-sim exists and golden runs can be compared.
+  cross-target:
+    name: Gate G2 — cross-target consistency
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test on ${{ matrix.target }}
+        run: cargo test --all-features
+
+  wasm:
+    name: wasm32 builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Build for wasm32
+        run: cargo build --target wasm32-unknown-unknown -p cf-schema
+
+  # Gate: no AGPL/GPL/non-commercial dependency may enter the product path.
+  # docs/07-infrastructure-and-cost.md §5 — this project intends commercial
+  # entry, and catching a licence problem here is far cheaper than in diligence.
+  licences:
+    name: Licence audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+      - name: Check licences
+        run: cargo deny check licenses

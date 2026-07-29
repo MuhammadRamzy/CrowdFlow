@@ -1,0 +1,1534 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VenueDoc",
+  "description": "A complete venue.",
+  "type": "object",
+  "required": [
+    "floors",
+    "id",
+    "name",
+    "schemaVersion"
+  ],
+  "properties": {
+    "annotations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Annotation"
+      }
+    },
+    "floors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Floor"
+      }
+    },
+    "georef": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Georef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "id": {
+      "type": "string"
+    },
+    "layers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Layer"
+      }
+    },
+    "links": {
+      "description": "Vertical connections between floors.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Link"
+      }
+    },
+    "name": {
+      "type": "string"
+    },
+    "provenance": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Provenance"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "routing": {
+      "default": {},
+      "allOf": [
+        {
+          "$ref": "#/definitions/Routing"
+        }
+      ]
+    },
+    "scale": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ScaleCalibration"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "schemaVersion": {
+      "description": "Always `cfs.venue/1.0`. Checked on load so a future format change fails loudly rather than silently mis-parsing.",
+      "type": "string"
+    },
+    "units": {
+      "default": {
+        "length": "m"
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/Units"
+        }
+      ]
+    }
+  },
+  "definitions": {
+    "Annotation": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "p"
+      ],
+      "properties": {
+        "floor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "p": {
+          "$ref": "#/definitions/Vec2"
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Attractor": {
+      "description": "A point of interest that draws agents. Weight is relative within a floor.",
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "point": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Vec2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "weight": {
+          "default": 1.0,
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "CalibrationSource": {
+      "oneOf": [
+        {
+          "description": "DXF `$INSUNITS` header or equivalent explicit declaration.",
+          "type": "string",
+          "enum": [
+            "fileHeader"
+          ]
+        },
+        {
+          "description": "OCR'd dimension string cross-checked against the geometry it annotates.",
+          "type": "string",
+          "enum": [
+            "ocrDimension"
+          ]
+        },
+        {
+          "description": "Inferred from the modal detected door width (~0.9 m).",
+          "type": "string",
+          "enum": [
+            "doorWidthPrior"
+          ]
+        },
+        {
+          "description": "User clicked two points and typed the real distance.",
+          "type": "string",
+          "enum": [
+            "manualTwoPoint"
+          ]
+        }
+      ]
+    },
+    "Component": {
+      "description": "A placed intelligent asset. Not a drawing — a simulation node carrying real operational metadata (throughput ceilings, service-time distributions).",
+      "type": "object",
+      "required": [
+        "id",
+        "params",
+        "transform",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "layer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "params": {
+          "$ref": "#/definitions/ComponentParams"
+        },
+        "queueArea": {
+          "description": "Zone in which agents queue for this component.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "schedule": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ScheduleEntry"
+          }
+        },
+        "servesAccess": {
+          "description": "Access tags this component will serve. Empty means all.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "transform": {
+          "$ref": "#/definitions/Transform"
+        },
+        "type": {
+          "$ref": "#/definitions/ComponentType"
+        }
+      }
+    },
+    "ComponentParams": {
+      "description": "Per-type parameters.\n\nEvery field is optional at the schema level and validated per-type in [`crate::validate`], rather than being a tagged union. Two reasons: the editor can change a component's type without losing compatible params, and adding a param to one type does not churn the wire format for the others.",
+      "type": "object",
+      "properties": {
+        "attractorWeight": {
+          "description": "Relative pull for dwell attractors (stalls, booths).",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "cols": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "complianceRate": {
+          "description": "Fraction of unfamiliar agents that obey this sign.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "direction": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/FlowDirection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "footprint": {
+          "description": "Physical footprint in floor-local metres, relative to `transform.p`.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Vec2"
+          }
+        },
+        "headingDeg": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "laneWidthM": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "lanes": {
+          "description": "Number of parallel lanes / stations / servers.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "maxThroughputPph": {
+          "description": "Hard ceiling in persons per hour. Enforced independently of the physics so a component cannot exceed its manufacturer-rated throughput.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "queueDiscipline": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/QueueDiscipline"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "radiusM": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "rowPitchM": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "rows": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "seatPitchM": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "secondaryRate": {
+          "description": "Probability an agent is pulled aside for secondary screening.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "secondaryTime": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "serviceTime": {
+          "description": "Per-person service time.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Distribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ComponentType": {
+      "type": "string",
+      "enum": [
+        "turnstile",
+        "securityCheckpoint",
+        "registrationDesk",
+        "ticketCounter",
+        "barricade",
+        "seatingBlock",
+        "stall",
+        "sign"
+      ]
+    },
+    "Distribution": {
+      "description": "A sampleable distribution.\n\nSerialised as an internally-tagged union on the `dist` field, e.g. `{\"dist\":\"normal\",\"mean\":1.34,\"sd\":0.26,\"min\":0.6,\"max\":2.2}`.",
+      "oneOf": [
+        {
+          "description": "A fixed value. Useful for pinning a parameter during sensitivity analysis.",
+          "type": "object",
+          "required": [
+            "dist",
+            "value"
+          ],
+          "properties": {
+            "dist": {
+              "type": "string",
+              "enum": [
+                "constant"
+              ]
+            },
+            "value": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "dist",
+            "max",
+            "min"
+          ],
+          "properties": {
+            "dist": {
+              "type": "string",
+              "enum": [
+                "uniform"
+              ]
+            },
+            "max": {
+              "type": "number",
+              "format": "double"
+            },
+            "min": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "dist",
+            "mean",
+            "sd"
+          ],
+          "properties": {
+            "dist": {
+              "type": "string",
+              "enum": [
+                "normal"
+              ]
+            },
+            "max": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "mean": {
+              "type": "number",
+              "format": "double"
+            },
+            "min": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "sd": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Parameterised by the mean and sd **of the underlying normal**, not of the resulting variate. Named `muLn`/`sigmaLn` rather than `mu`/`sigma` so the distinction is impossible to miss at a call site — getting this wrong is the single most common modelling error with lognormals.\n\nNote: `rename_all` on the enum renames *variants*, not their fields, so multi-word fields need their own attribute.",
+          "type": "object",
+          "required": [
+            "dist",
+            "muLn",
+            "sigmaLn"
+          ],
+          "properties": {
+            "dist": {
+              "type": "string",
+              "enum": [
+                "lognormal"
+              ]
+            },
+            "max": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "min": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "muLn": {
+              "type": "number",
+              "format": "double"
+            },
+            "sigmaLn": {
+              "type": "number",
+              "format": "double"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "dist",
+            "lambda"
+          ],
+          "properties": {
+            "dist": {
+              "type": "string",
+              "enum": [
+                "exponential"
+              ]
+            },
+            "lambda": {
+              "type": "number",
+              "format": "double"
+            },
+            "max": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            }
+          }
+        },
+        {
+          "description": "Discrete outcomes with weights. Weights need not sum to 1; they are normalised. Keys are strings so that group sizes (`\"1\"`, `\"2\"`, …) and named categories share one representation.",
+          "type": "object",
+          "required": [
+            "dist",
+            "p"
+          ],
+          "properties": {
+            "dist": {
+              "type": "string",
+              "enum": [
+                "categorical"
+              ]
+            },
+            "p": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number",
+                "format": "double"
+              }
+            }
+          }
+        },
+        {
+          "description": "Empirical distribution over observed samples, sampled by linear interpolation of the order statistics.",
+          "type": "object",
+          "required": [
+            "dist",
+            "samples"
+          ],
+          "properties": {
+            "dist": {
+              "type": "string",
+              "enum": [
+                "empirical"
+              ]
+            },
+            "samples": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "EdgeDirection": {
+      "type": "string",
+      "enum": [
+        "both",
+        "forward",
+        "backward"
+      ]
+    },
+    "Floor": {
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "ceilingM": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Component"
+          }
+        },
+        "elevationM": {
+          "default": 0.0,
+          "type": "number",
+          "format": "double"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "obstacles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Obstacle"
+          }
+        },
+        "openings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Opening"
+          }
+        },
+        "walls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Wall"
+          }
+        },
+        "zones": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Zone"
+          }
+        }
+      }
+    },
+    "FlowConstraint": {
+      "description": "A directional bias applied across a zone, e.g. a one-way corridor.",
+      "type": "object",
+      "required": [
+        "kind",
+        "zone"
+      ],
+      "properties": {
+        "headingDeg": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "kind": {
+          "$ref": "#/definitions/FlowConstraintKind"
+        },
+        "strength": {
+          "description": "Compliance fraction, 0.0–1.0. `0.85` means 15% of agents ignore the constraint — which is what actually happens with signage and stanchions.",
+          "default": 0.85,
+          "type": "number",
+          "format": "double"
+        },
+        "zone": {
+          "type": "string"
+        }
+      }
+    },
+    "FlowConstraintKind": {
+      "type": "string",
+      "enum": [
+        "oneWay",
+        "preferred",
+        "avoid"
+      ]
+    },
+    "FlowDirection": {
+      "type": "string",
+      "enum": [
+        "in",
+        "out",
+        "both"
+      ]
+    },
+    "GateState": {
+      "type": "string",
+      "enum": [
+        "open",
+        "closed",
+        "entryOnly",
+        "exitOnly"
+      ]
+    },
+    "Georef": {
+      "description": "Optional real-world georeferencing, for venues placed on a map.",
+      "type": "object",
+      "required": [
+        "epsg",
+        "origin"
+      ],
+      "properties": {
+        "epsg": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "origin": {
+          "$ref": "#/definitions/Vec2"
+        },
+        "rotationDeg": {
+          "default": 0.0,
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "Layer": {
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "default": "normal",
+          "allOf": [
+            {
+              "$ref": "#/definitions/LayerKind"
+            }
+          ]
+        },
+        "locked": {
+          "default": false,
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "visible": {
+          "default": true,
+          "type": "boolean"
+        },
+        "z": {
+          "default": 0,
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "LayerKind": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "normal"
+          ]
+        },
+        {
+          "description": "Un-committed AI or import output awaiting human review. Nothing on a proposal layer is ever simulated or reported until accepted.",
+          "type": "string",
+          "enum": [
+            "proposal"
+          ]
+        }
+      ]
+    },
+    "LengthUnit": {
+      "description": "Display unit only. **All stored coordinates are metres regardless.** Mixing storage units is how unit-confusion bugs get into safety calculations.",
+      "type": "string",
+      "enum": [
+        "m",
+        "ft"
+      ]
+    },
+    "Link": {
+      "description": "A vertical connection between two floors.",
+      "type": "object",
+      "required": [
+        "ends",
+        "id",
+        "kind",
+        "widthM"
+      ],
+      "properties": {
+        "clearWidthM": {
+          "description": "Width excluding handrails — the figure egress capacity is computed from.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "direction": {
+          "default": "both",
+          "allOf": [
+            {
+              "$ref": "#/definitions/FlowDirection"
+            }
+          ]
+        },
+        "ends": {
+          "description": "Exactly two ends, one per floor.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LinkEnd"
+          }
+        },
+        "flowRatePpmm": {
+          "description": "Green Guide rate of passage, persons per metre per minute. 82 on the level, 66 on stairs.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "goingM": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/LinkKind"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "riserM": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "schedule": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ScheduleEntry"
+          }
+        },
+        "speedMultiplierDown": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "speedMultiplierUp": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "steps": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "widthM": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "LinkEnd": {
+      "type": "object",
+      "required": [
+        "floor",
+        "footprint"
+      ],
+      "properties": {
+        "floor": {
+          "type": "string"
+        },
+        "footprint": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Vec2"
+          }
+        }
+      }
+    },
+    "LinkKind": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "stair",
+            "ramp",
+            "escalator",
+            "elevator"
+          ]
+        },
+        {
+          "description": "A void with no physical connection — used to model an atrium edge.",
+          "type": "string",
+          "enum": [
+            "opening"
+          ]
+        }
+      ]
+    },
+    "Obstacle": {
+      "type": "object",
+      "required": [
+        "id",
+        "polygon"
+      ],
+      "properties": {
+        "heightM": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "default": "generic",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ObstacleKind"
+            }
+          ]
+        },
+        "layer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "polygon": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Vec2"
+          }
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Provenance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "traversable": {
+          "default": false,
+          "type": "boolean"
+        }
+      }
+    },
+    "ObstacleKind": {
+      "type": "string",
+      "enum": [
+        "generic",
+        "pillar",
+        "furniture",
+        "equipment",
+        "planter",
+        "water"
+      ]
+    },
+    "Opening": {
+      "description": "A door, gate or gap, stored **parametrically along its parent wall**.\n\n`t` is normalised arc length in `[0,1]`. Storing it this way means moving or re-snapping a wall carries its doors with it — the most common editing operation stays correct with no constraint solver.",
+      "type": "object",
+      "required": [
+        "id",
+        "t",
+        "wall",
+        "widthM"
+      ],
+      "properties": {
+        "capacityFactor": {
+          "description": "Multiplies the code-derived rate of passage. 1.0 unless a physical feature (revolving door, tight lobby) justifies otherwise.",
+          "default": 1.0,
+          "type": "number",
+          "format": "double"
+        },
+        "id": {
+          "type": "string"
+        },
+        "isFireExit": {
+          "default": false,
+          "type": "boolean"
+        },
+        "kind": {
+          "default": "door",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OpeningKind"
+            }
+          ]
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Provenance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schedule": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ScheduleEntry"
+          }
+        },
+        "swing": {
+          "default": "both",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Swing"
+            }
+          ]
+        },
+        "t": {
+          "description": "Normalised position along the wall polyline, `0.0..=1.0`.",
+          "type": "number",
+          "format": "double"
+        },
+        "wall": {
+          "type": "string"
+        },
+        "widthM": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "OpeningKind": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "door",
+            "doubleDoor",
+            "gate",
+            "revolving",
+            "emergencyExit"
+          ]
+        },
+        {
+          "description": "A plain gap in a wall — no leaf, no frame.",
+          "type": "string",
+          "enum": [
+            "gap"
+          ]
+        }
+      ]
+    },
+    "Provenance": {
+      "description": "Where an element came from, and how much we trust it.\n\nEvery element produced by import carries this. It is what lets the review UI band elements by confidence, and what lets a report state which parts of the model were machine-generated versus human-drawn.",
+      "type": "object",
+      "required": [
+        "source"
+      ],
+      "properties": {
+        "confidence": {
+          "description": "0.0–1.0. `1.0` for human-drawn or exact vector extraction.",
+          "default": 1.0,
+          "type": "number",
+          "format": "double"
+        },
+        "importJob": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reviewedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reviewedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "sourceFile": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "QueueDiscipline": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "single"
+          ]
+        },
+        {
+          "description": "One line per server.",
+          "type": "string",
+          "enum": [
+            "parallel"
+          ]
+        },
+        {
+          "description": "One line feeding all servers.",
+          "type": "string",
+          "enum": [
+            "serpentine"
+          ]
+        }
+      ]
+    },
+    "Routing": {
+      "description": "The planner's explicit circulatory network, layered on top of the geometry.",
+      "type": "object",
+      "properties": {
+        "edges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RoutingEdge"
+          }
+        },
+        "flowConstraints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/FlowConstraint"
+          }
+        },
+        "waypoints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Waypoint"
+          }
+        }
+      }
+    },
+    "RoutingEdge": {
+      "type": "object",
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "costMult": {
+          "default": 1.0,
+          "type": "number",
+          "format": "double"
+        },
+        "direction": {
+          "default": "both",
+          "allOf": [
+            {
+              "$ref": "#/definitions/EdgeDirection"
+            }
+          ]
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      }
+    },
+    "ScaleCalibration": {
+      "description": "How the drawing's pixel/drawing units were mapped to metres during import.\n\nA wrong scale silently invalidates every downstream compliance number, so this records *how* it was established and how confident we are.",
+      "type": "object",
+      "required": [
+        "calibration",
+        "sourcePxPerMeter"
+      ],
+      "properties": {
+        "calibration": {
+          "$ref": "#/definitions/CalibrationSource"
+        },
+        "confidence": {
+          "description": "0.0–1.0.",
+          "default": 0.0,
+          "type": "number",
+          "format": "double"
+        },
+        "confirmed": {
+          "description": "Set once a human has confirmed the scale. Import must not commit without it.",
+          "default": false,
+          "type": "boolean"
+        },
+        "sourcePxPerMeter": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "ScheduleEntry": {
+      "description": "Time-varying state for an opening, component or link. Gives Core Capability 3's \"time windows\" — gates opening and closing during an event.",
+      "type": "object",
+      "required": [
+        "fromS",
+        "state"
+      ],
+      "properties": {
+        "fromS": {
+          "description": "Simulation time in seconds at which this state takes effect.",
+          "type": "number",
+          "format": "double"
+        },
+        "state": {
+          "$ref": "#/definitions/GateState"
+        }
+      }
+    },
+    "Swing": {
+      "type": "string",
+      "enum": [
+        "both",
+        "inward",
+        "outward"
+      ]
+    },
+    "Transform": {
+      "description": "Placement of a component on a floor.",
+      "type": "object",
+      "required": [
+        "p"
+      ],
+      "properties": {
+        "p": {
+          "description": "Origin in floor-local metres.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Vec2"
+            }
+          ]
+        },
+        "rotDeg": {
+          "description": "Rotation in degrees, counter-clockwise from +x.",
+          "default": 0.0,
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "Units": {
+      "type": "object",
+      "properties": {
+        "length": {
+          "default": "m",
+          "allOf": [
+            {
+              "$ref": "#/definitions/LengthUnit"
+            }
+          ]
+        }
+      }
+    },
+    "Vec2": {
+      "description": "A 2D point in metres, as [x, y].",
+      "type": "object",
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "number",
+          "format": "double"
+        },
+        "y": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "Wall": {
+      "type": "object",
+      "required": [
+        "id",
+        "polyline"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "default": "structural",
+          "allOf": [
+            {
+              "$ref": "#/definitions/WallKind"
+            }
+          ]
+        },
+        "layer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permeable": {
+          "description": "Whether agents may pass through (e.g. a rope line, a low barrier).",
+          "default": false,
+          "type": "boolean"
+        },
+        "polyline": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Vec2"
+          }
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Provenance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thicknessM": {
+          "default": 0.2,
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "WallKind": {
+      "type": "string",
+      "enum": [
+        "structural",
+        "partition",
+        "barrier",
+        "temporary"
+      ]
+    },
+    "Waypoint": {
+      "type": "object",
+      "required": [
+        "floor",
+        "id",
+        "p"
+      ],
+      "properties": {
+        "floor": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "p": {
+          "$ref": "#/definitions/Vec2"
+        },
+        "radiusM": {
+          "default": 1.5,
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "Zone": {
+      "description": "A semantic area. `kind` is the hook the compliance engine reads to derive an occupant load — the author picks a meaning, the engine derives the number.",
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "polygon"
+      ],
+      "properties": {
+        "access": {
+          "description": "Access tags permitted to enter. Empty means unrestricted.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "attractors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Attractor"
+          }
+        },
+        "id": {
+          "type": "string"
+        },
+        "isVoid": {
+          "description": "A hole in the floor (atrium, stairwell shaft) — not walkable, and excluded from occupant load.",
+          "default": false,
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/definitions/ZoneKind"
+        },
+        "layer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "olfJustification": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "olfOverride": {
+          "description": "Override the code-derived occupant load factor, in m² per person. Requires `olfJustification` — an unexplained override is exactly the kind of thing an auditor will ask about.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "polygon": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Vec2"
+          }
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Provenance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "speedMultiplier": {
+          "default": 1.0,
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "ZoneKind": {
+      "description": "NFPA 101 Table 7.3.1.2 occupancy classification.\n\nThe occupant load factors themselves live in `cf-compliance/rules/` as data, not here — this enum only names the classification.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "assemblyFixedSeating",
+            "circulation",
+            "business",
+            "mercantile",
+            "storage",
+            "backOfHouse",
+            "queue",
+            "restricted",
+            "exterior"
+          ]
+        },
+        {
+          "description": "Standing, dance floor, no fixed seating. OLF 0.65 m²/person.",
+          "type": "string",
+          "enum": [
+            "assemblyConcentrated"
+          ]
+        },
+        {
+          "description": "Dining, exhibition. OLF 1.4 m²/person.",
+          "type": "string",
+          "enum": [
+            "assemblyLessConcentrated"
+          ]
+        },
+        {
+          "description": "Standing space. OLF 0.46 m²/person.",
+          "type": "string",
+          "enum": [
+            "assemblyStandingSpace"
+          ]
+        }
+      ]
+    }
+  }
+}
