@@ -36,7 +36,7 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [x] `cf-geom`: robust orientation/incircle predicates (Shewchuk via `robust`)
 - [x] `cf-geom`: segment intersection, distance queries, point-in-polygon
 - [x] `cf-geom`: polygon validity (winding, convexity, self-intersection, defects)
-- [ ] `cf-geom`: polygon offsetting (wall thickness → obstacle), with miter limit
+- [x] `cf-geom`: polygon offsetting (wall thickness → obstacle), miter limit + bevel
 - [ ] `cf-navmesh`: constrained Delaunay triangulation
 - [ ] `cf-navmesh`: refinement, adjacency, portals with clear width
 - [ ] `cf-navmesh`: funnel algorithm for corner-cutting paths

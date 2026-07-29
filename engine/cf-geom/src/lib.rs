@@ -14,6 +14,7 @@
 //! - [`predicates`] — exact orientation and in-circle tests
 //! - [`segment`] — intersection, distance and closest-point queries
 //! - [`polygon_ops`] — winding, convexity, validity, point location
+//! - [`offset`] — wall centreline + thickness → obstacle ring
 //!
 //! ## The rule
 //!
@@ -46,11 +47,13 @@
 //! assert!(contains_point(&hall, Vec2::new(10.0, 6.0)));
 //! ```
 
+pub mod offset;
 pub mod polygon_ops;
 pub mod predicates;
 pub mod primitives;
 pub mod segment;
 
+pub use offset::{distance_to_polyline, offset_polyline_to_ring, OffsetError};
 pub use polygon_ops::{contains_point, locate_point, PointLocation, Winding};
 pub use predicates::{collinear, in_circle, orient, Orientation};
 pub use primitives::{Aabb, Polygon, Polyline, Transform, Vec2};

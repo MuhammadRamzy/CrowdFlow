@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: End the current work session cleanly so the other person's Claude can pick up. Runs checks, updates docs/STATE.md and docs/TASKS.md, commits, and pushes. Use when the user says "handoff", "wrapping up", "tokens running low", "pushing for the day", or when you judge the session is ending.
+description: End the current work session cleanly so the other person's Claude can pick up. Runs checks, updates docs/STATE.md and docs/TASKS.md, commits, and pushes. ONLY use when the user explicitly asks for it — they trigger this themselves when their token budget nears its limit. Never invoke it on your own judgement that a session is ending.
 ---
 
 # Handoff
@@ -9,6 +9,9 @@ Two people alternate on this repo from separate machines and separate Claude acc
 Whatever is not pushed does not exist for the next session. Your job is to leave the repo
 in a state where someone with **zero context** can run `cargo test`, read `docs/STATE.md`,
 and be productive within two minutes.
+
+The user invokes this deliberately when their token budget is nearly spent. Do not invoke
+it yourself, and do not pre-emptively wind work down in anticipation of it.
 
 Work through these in order. Do not skip step 1 or step 5.
 

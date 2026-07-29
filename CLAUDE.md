@@ -17,11 +17,15 @@ takes over. You may be either one, mid-stream, with no memory of what came befor
 3. Run `cargo test` to confirm the tree is green before you change anything. If it is
    already red, fix that first and say so — do not build on a broken tree.
 
-## 2. Before you stop
+## 2. Ending a session
 
-Run `/handoff` (see `.claude/skills/handoff/`). It updates `docs/STATE.md`, runs the
-checks, commits, and pushes. **A session that ends without a push is work the other person
-cannot continue.** If tokens are running low, handoff early rather than risk losing it.
+**The user decides when to hand off, not you.** They watch their own token usage and will
+type `/handoff` at around 90–95%. Do not run it unprompted, do not suggest wrapping up, and
+do not slow down or start "saving budget" on your own initiative — keep working until told.
+
+What you *should* do without being asked: **commit and push each completed, green slice as
+you finish it.** That is ordinary hygiene, not a handoff — it means an abrupt end costs at
+most one slice of work. Never leave a large amount of finished work uncommitted.
 
 ---
 
