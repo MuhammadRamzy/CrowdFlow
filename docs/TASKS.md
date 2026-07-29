@@ -40,8 +40,10 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [x] `cf-navmesh`: Delaunay triangulation (Bowyer-Watson, exact predicates)
 - [x] `cf-navmesh`: constraint edge insertion (makes it *constrained* Delaunay)
 - [x] `cf-navmesh`: region classification — walkable vs solid, with leak detection
-- [ ] `cf-navmesh`: refinement, adjacency, portals with clear width
-- [ ] `cf-navmesh`: funnel algorithm for corner-cutting paths
+- [x] `cf-navmesh`: portals with clear width
+- [x] `cf-navmesh`: A* corridor search over the triangle dual
+- [ ] `cf-navmesh`: refinement (max triangle area for density resolution)
+- [x] `cf-navmesh`: funnel algorithm for corner-cutting paths
 - [ ] `cf-navmesh`: flow fields (Dijkstra on triangle dual + gradient)
 - [ ] `cf-navmesh`: multi-floor link portals
 - [ ] `cf-compile`: `VenueDoc` → `NavGraph`
