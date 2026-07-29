@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["engine/cf-geom", "engine/cf-navmesh", "engine/cf-schema"]
+members = ["engine/cf-compile", "engine/cf-geom", "engine/cf-navmesh", "engine/cf-schema"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,6 +11,8 @@ repository = "https://github.com/crowdflow-studio/crowdflow"
 
 [workspace.dependencies]
 cf-geom = { path = "engine/cf-geom", default-features = false }
+cf-navmesh = { path = "engine/cf-navmesh" }
+cf-schema = { path = "engine/cf-schema" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 schemars = "0.8"

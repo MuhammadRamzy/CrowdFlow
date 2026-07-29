@@ -16,8 +16,7 @@
 //! - [`constraint`] — constraint edge insertion. **Done.**
 //! - [`region`] — walkable vs solid classification. **Done.**
 //! - [`navmesh`] — portals, A* corridor + funnel pathfinding. **Done.**
-//! - Refinement and flow fields — next.
-//! - Refinement, portals, funnel, flow fields — after that.
+//! - Mesh refinement and flow fields — next.
 //!
 //! Constraint insertion is deliberately a separate step built on a verified
 //! unconstrained triangulation. Writing both at once makes failures impossible

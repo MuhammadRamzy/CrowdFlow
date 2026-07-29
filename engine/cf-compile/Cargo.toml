@@ -1,0 +1,16 @@
+[package]
+name = "cf-compile"
+description = "Compiles an authored VenueDoc into a simulation-ready NavGraph."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+cf-geom = { workspace = true, features = ["serde"] }
+cf-navmesh.workspace = true
+cf-schema.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

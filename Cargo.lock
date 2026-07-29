@@ -3,6 +3,16 @@
 version = 4
 
 [[package]]
+name = "cf-compile"
+version = "0.1.0"
+dependencies = [
+ "cf-geom",
+ "cf-navmesh",
+ "cf-schema",
+ "serde_json",
+]
+
+[[package]]
 name = "cf-geom"
 version = "0.1.0"
 dependencies = [
