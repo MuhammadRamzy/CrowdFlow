@@ -46,10 +46,11 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [x] `cf-navmesh`: funnel algorithm for corner-cutting paths
 - [ ] `cf-navmesh`: flow fields (Dijkstra on triangle dual + gradient)
 - [ ] `cf-navmesh`: multi-floor link portals
-- [ ] `cf-compile`: resolve parametric openings + offset walls to obstacle rings
-- [ ] `cf-compile`: seal door gaps with virtual edges before classify, reopen as portals
-- [ ] `cf-compile`: `VenueDoc` → `NavGraph`
-- [ ] `cf-compile`: `CompileWarning` set (unreachable zone, no exit, narrow opening, …)
+- [x] `cf-compile`: resolve parametric openings, cut walls around them
+- [x] `cf-compile`: seal door gaps with virtual edges before classify, reopen after
+- [x] `cf-compile`: `VenueDoc` → `NavGraph`
+- [x] `cf-compile`: `CompileWarning` set (unreachable zone, no exit, narrow opening, …)
+- [x] Acceptance: `hall-two-doors` compiles to 240 m² walkable, agent paths to a door
 - [ ] Acceptance: compile `convention-hall` fixture < 800 ms, zero unreachable area
 
 ### B2 — ECS + locomotion (W8–W14)
