@@ -28,15 +28,18 @@
 //! - [`spatial`] — uniform grid for neighbour queries. **Done.**
 //! - [`world`] — Structure-of-Arrays agent storage. **Done.**
 //! - [`locomotion`] — Social Force Model + position-based contacts. **Done.**
-//! - The step loop, goals and exits — next.
+//! - [`sim`] — fixed-timestep step loop, routing and exits. **Done.**
+//! - Flow fields, queues, groups, evacuation mode — next.
 
 pub mod fmath;
 pub mod locomotion;
 pub mod rng;
+pub mod sim;
 pub mod spatial;
 pub mod world;
 
 pub use locomotion::{LocomotionParams, LocomotionScratch};
 pub use rng::{Rng, Stream};
+pub use sim::{ExitSpan, Sim, SimParams, SimStats};
 pub use spatial::SpatialGrid;
 pub use world::{AgentId, AgentState, SpawnParams, World, NO_TRIANGLE};

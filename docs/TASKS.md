@@ -56,7 +56,7 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 ### B2 — ECS + locomotion (W8–W14)
 - [x] SoA `World` with hot/warm/cold array split, stable agent ids
 - [x] Spatial hash with counting-sort rebuild
-- [ ] Fixed-timestep step loop
+- [x] Fixed-timestep step loop (time derived from tick, no drift)
 - [x] Social Force Model: drive, agent repulsion (anisotropic), wall repulsion
 - [x] PBD contact resolution (Jacobi, order-independent)
 - [ ] Speed distributions + Weidmann density-speed reduction
