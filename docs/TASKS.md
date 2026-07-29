@@ -54,7 +54,7 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [ ] Acceptance: compile `convention-hall` fixture < 800 ms, zero unreachable area
 
 ### B2 — ECS + locomotion (W8–W14)
-- [ ] SoA `World` with hot/warm/cold array split
+- [x] SoA `World` with hot/warm/cold array split, stable agent ids
 - [x] Spatial hash with counting-sort rebuild
 - [ ] Fixed-timestep step loop
 - [ ] Social Force Model: drive, agent repulsion (anisotropic), wall repulsion

@@ -26,10 +26,13 @@
 //!
 //! - [`rng`] — counter-based deterministic randomness. **Done.**
 //! - [`spatial`] — uniform grid for neighbour queries. **Done.**
-//! - ECS world, locomotion, contact resolution — next.
+//! - [`world`] — Structure-of-Arrays agent storage. **Done.**
+//! - Locomotion, contact resolution, the step loop — next.
 
 pub mod rng;
 pub mod spatial;
+pub mod world;
 
 pub use rng::{Rng, Stream};
 pub use spatial::SpatialGrid;
+pub use world::{AgentId, AgentState, SpawnParams, World, NO_TRIANGLE};
