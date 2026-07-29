@@ -9,12 +9,18 @@
 //! roughly a 3x reduction in document size, and it matches how every CAD
 //! interchange format writes coordinates.
 
+#[cfg(feature = "serde")]
 use schemars::JsonSchema;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// A point or vector in floor-local metres.
-#[derive(Clone, Copy, Debug, Default, PartialEq, JsonSchema)]
-#[schemars(with = "[f64; 2]", description = "A 2D point in metres, as [x, y].")]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(JsonSchema))]
+#[cfg_attr(
+    feature = "serde",
+    schemars(with = "[f64; 2]", description = "A 2D point in metres, as [x, y].")
+)]
 pub struct Vec2 {
     pub x: f64,
     pub y: f64,
@@ -119,6 +125,7 @@ impl std::ops::SubAssign for Vec2 {
     }
 }
 
+#[cfg(feature = "serde")]
 impl Serialize for Vec2 {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeTuple;
@@ -129,6 +136,7 @@ impl Serialize for Vec2 {
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Vec2 {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let [x, y] = <[f64; 2]>::deserialize(d)?;
@@ -144,8 +152,9 @@ impl From<[f64; 2]> for Vec2 {
 
 /// An open chain of points. Walls are polylines, not single segments, so that a
 /// run of collinear-ish wall survives import as one editable entity.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(transparent)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize, JsonSchema))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct Polyline(pub Vec<Vec2>);
 
 impl Polyline {
@@ -230,8 +239,9 @@ impl Polyline {
 }
 
 /// An implicitly-closed ring. The last point is *not* repeated.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(transparent)]
+#[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize, JsonSchema))]
+#[cfg_attr(feature = "serde", serde(transparent))]
 pub struct Polygon(pub Vec<Vec2>);
 
 impl Polygon {
@@ -328,8 +338,9 @@ impl Polygon {
 }
 
 /// Axis-aligned bounding box.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize, JsonSchema))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
 pub struct Aabb {
     pub min: Vec2,
     pub max: Vec2,
@@ -369,13 +380,14 @@ impl Aabb {
 }
 
 /// Placement of a component on a floor.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize, JsonSchema))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
 pub struct Transform {
     /// Origin in floor-local metres.
     pub p: Vec2,
     /// Rotation in degrees, counter-clockwise from +x.
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub rot_deg: f64,
 }
 

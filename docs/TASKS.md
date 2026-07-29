@@ -33,9 +33,10 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 ## Track B — Simulation Engine
 
 ### B1 — Geometry, navmesh, compiler (W3–W9) · critical path
-- [ ] `cf-geom`: robust orientation/incircle predicates
-- [ ] `cf-geom`: segment intersection, distance queries, point-in-polygon
-- [ ] `cf-geom`: polygon offsetting (wall thickness → obstacle)
+- [x] `cf-geom`: robust orientation/incircle predicates (Shewchuk via `robust`)
+- [x] `cf-geom`: segment intersection, distance queries, point-in-polygon
+- [x] `cf-geom`: polygon validity (winding, convexity, self-intersection, defects)
+- [ ] `cf-geom`: polygon offsetting (wall thickness → obstacle), with miter limit
 - [ ] `cf-navmesh`: constrained Delaunay triangulation
 - [ ] `cf-navmesh`: refinement, adjacency, portals with clear width
 - [ ] `cf-navmesh`: funnel algorithm for corner-cutting paths

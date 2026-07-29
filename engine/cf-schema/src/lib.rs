@@ -14,7 +14,7 @@
 //!
 //! ## Layout
 //!
-//! - [`geom`] — `Vec2`, `Polyline`, `Polygon`, `Aabb`, `Transform`
+//! - `geom` — re-exported from `cf-geom`: `Vec2`, `Polyline`, `Polygon`, `Aabb`
 //! - [`dist`] — probability distributions with RNG-free inverse-CDF sampling
 //! - [`ids`] — typed, string-backed identifiers
 //! - [`venue`] — the authored venue document
@@ -32,14 +32,17 @@
 //! ```
 
 pub mod dist;
-pub mod geom;
 pub mod ids;
 pub mod scenario;
 pub mod validate;
 pub mod venue;
 
+pub use cf_geom as geom;
+/// Geometry primitives live in `cf-geom` so that crates which need geometry but
+/// not documents (cf-sim, cf-navmesh) do not depend on this crate. Re-exported
+/// here so callers see one coherent surface.
+pub use cf_geom::{Aabb, Polygon, Polyline, Transform, Vec2};
 pub use dist::Distribution;
-pub use geom::{Aabb, Polygon, Polyline, Transform, Vec2};
 pub use ids::*;
 pub use scenario::{ScenarioDoc, SimMode, SCENARIO_SCHEMA_VERSION};
 pub use validate::{validate_scenario, validate_venue, Issue, Report, Severity};

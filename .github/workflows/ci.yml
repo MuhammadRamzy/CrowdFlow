@@ -33,6 +33,15 @@ jobs:
       - name: Test
         run: cargo test --all-features
 
+      # cf-sim ships to browsers and will depend on cf-geom without serde.
+      # If this path only gets built at the point cf-sim exists, the missing
+      # cfg gates surface as a wall of errors instead of one.
+      - name: Build cf-geom without default features
+        run: cargo build -p cf-geom --no-default-features
+
+      - name: Clippy cf-geom without default features
+        run: cargo clippy -p cf-geom --no-default-features -- -D warnings
+
   # Gate G1 (docs/01-architecture.md §6): schema/ is generated from
   # engine/cf-schema and must never drift from it. A change to the Rust types
   # without a regenerated schema is what silently breaks the other track.
@@ -89,7 +98,9 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: Build for wasm32
-        run: cargo build --target wasm32-unknown-unknown -p cf-schema
+        run: |
+          cargo build --target wasm32-unknown-unknown -p cf-schema
+          cargo build --target wasm32-unknown-unknown -p cf-geom --no-default-features
 
   # Gate: no AGPL/GPL/non-commercial dependency may enter the product path.
   # docs/07-infrastructure-and-cost.md §5 — this project intends commercial

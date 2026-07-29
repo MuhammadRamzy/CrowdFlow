@@ -1,0 +1,27 @@
+[package]
+name = "cf-geom"
+description = "Geometry primitives and robust predicates for CrowdFlow Studio."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["serde"]
+# Serialisation is optional so that cf-sim, which ships to browsers as wasm,
+# can drop serde and schemars from its dependency tree entirely.
+serde = ["dep:serde", "dep:schemars"]
+
+[dependencies]
+# Shewchuk adaptive-precision floating-point predicates. Exact orientation and
+# incircle tests are a hard requirement for the CDT in cf-navmesh: a single
+# sign error produces a non-planar triangulation, and the failure surfaces far
+# away as agents walking through walls.
+robust = "1.2"
+
+serde = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json.workspace = true

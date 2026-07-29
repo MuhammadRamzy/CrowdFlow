@@ -8,57 +8,69 @@
 
 ## Right now
 
-**Phase:** P0 — Foundations (target: W1–W3)
+**Phase:** B1 — Geometry, navmesh & compiler (started; target W3–W9)
 **Last updated:** 2026-07-29 by Ramzy's session
-**Tree status:** green — 21 tests passing
+**Tree status:** green — 58 tests passing, clippy clean, fmt clean, wasm32 builds
 
 ### Just finished
 
-- Full planning doc set in `docs/` (8 documents, architecture through V&V and infra).
-- `engine/cf-schema` crate: the data contract. Venue + Scenario documents, geometry
-  primitives, distributions with RNG-free inverse-CDF sampling, structural/referential
-  validation. 21 tests green.
-- Generated JSON Schema committed to `schema/`.
-- First shared fixture: `fixtures/unit/hall-two-doors.{venue,scenario}.json` — this is the
-  M1 target venue (draw a hall with two doors, 500 agents walk out).
-- Repo, `CLAUDE.md`, handoff tooling, CI.
+- **`cf-geom` crate** — the bottom layer of the engine (ADR 0003):
+  - `primitives` — `Vec2`/`Polyline`/`Polygon`/`Aabb`/`Transform`, **moved here from
+    `cf-schema`** so `cf-sim` can use geometry without depending on document types.
+    `cf-schema` now depends on `cf-geom` and re-exports them, so its public API is unchanged.
+  - `predicates` — exact orientation and in-circle via Shewchuk adaptive precision
+    (`robust` crate). **Never compute an orientation by hand** — see the module docs for why.
+  - `segment` — intersection with every degenerate case classified explicitly
+    (shared endpoint, T-junction, collinear overlap, zero-length), plus closest-point and
+    distance queries.
+  - `polygon_ops` — winding, convexity, `validate` returning all defects, and exact point
+    location that reports `Boundary` as a distinct answer.
+- Serde/schemars behind a default-on `serde` feature so `cf-sim`'s wasm bundle can drop them.
+  CI now builds `--no-default-features` on native **and** wasm32.
+- ADR 0003.
 
 ### Next up — pick from the top
 
-1. **Codegen: TypeScript types** from `schema/*.json` into `web/src/schema/`.
-   Use `json-schema-to-typescript`. Add an npm script and wire it into CI gate G1
-   (regenerate → `git diff --exit-code`).
-2. **Codegen: Pydantic models** from `schema/*.json` into `services/api/`.
-   Use `datamodel-code-generator`.
-3. **`cf-geom` crate** — start of Track B / phase B1. Robust predicates, segment
-   intersection, polygon ops. This is the critical path to M1.
-4. **Round-trip test across languages** — same fixture parsed by Rust, TS and Python,
-   asserting identical structure. This is what makes gate G1 real rather than aspirational.
+1. **`cf-geom`: polygon offsetting** — needed to turn wall centrelines + `thicknessM` into
+   obstacle polygons for the navmesh. Start with the simple convex-ish case (offset each
+   edge, intersect adjacent offset lines, handle the reflex case by adding a bevel).
+   Miter-limit handling matters: a sharp wall corner offsets to a spike.
+2. **`cf-navmesh`: constrained Delaunay triangulation.** The big one, and the real critical
+   path to M1. Suggested slice: unconstrained Bowyer–Watson first with the exact predicates
+   already in `cf-geom`, tested against a known triangulation; *then* add constraint edge
+   insertion. Do not try to write both at once.
+3. **Codegen: TypeScript types** from `schema/*.json` into `web/src/schema/`
+   (`json-schema-to-typescript`), wired into gate G1. Small; unblocks Track A.
+4. **Codegen: Pydantic models** (`datamodel-code-generator`). Small.
 
-Items 1 and 2 are small and unblock the other track. Item 3 is the critical path.
-If you only have budget for one thing, do item 3.
+Item 2 is the critical path. Items 3 and 4 are each ~an hour and unblock the other track,
+so they are good picks for a short session.
 
 ### Open questions
 
-*(Nothing blocking. Add anything the other person should weigh in on, with your
-recommendation so they can just agree.)*
-
-- Repo visibility: `docs/07-infrastructure-and-cost.md` §4.4 recommends making `engine/`
-  public (free CI, supports the papers) but filing provisionals **before** any public push.
-  **Needs a decision from both of you + VIT's IP office before the repo goes public.**
-  Until then, keep it private.
+- **Repo visibility.** `docs/07-infrastructure-and-cost.md` §4.4 recommends `engine/` public
+  (free CI, supports the papers) but filing provisionals **before** any public push. The repo
+  is currently public. **Both of you + VIT's IP office should confirm this is what you want**
+  — public disclosure can start or forfeit filing windows.
 
 ### Gotchas discovered — don't rediscover these
 
 - `#[serde(rename_all)]` on an **enum** renames variants, **not** their fields. Struct
   variants with multi-word fields (e.g. `Lognormal { mu_ln }`) need their own
-  `#[serde(rename_all = "camelCase")]`. The test `every_schema_property_is_camel_case`
-  now guards this.
+  `#[serde(rename_all = "camelCase")]`. Guarded by `every_schema_property_is_camel_case`.
 - `Distribution::sample_icdf(0.0)` on an unbounded Normal used to return `-inf`. Uniform
-  PRNGs do emit exactly 0.0, so this would have injected NaN agents. Input is now clamped
-  away from **both** endpoints (`U_EPS`).
+  PRNGs do emit exactly 0.0, so this would have injected NaN agents. Now clamped away from
+  **both** endpoints (`U_EPS`).
+- When adding a `serde`-gated type to `cf-geom`, **field-level** attributes need
+  `cfg_attr` too, not just the derive. `#[serde(default)]` on a field is easy to miss and
+  only breaks the `--no-default-features` build. CI catches it now.
 - `schemars` is pinned at 0.8 (1.x has a different API). If you upgrade, the manual
   `#[schemars(with = ...)]` on `Vec2` needs revisiting.
+- Clippy rejects methods named `add`/`sub` on a type (shadows `std::ops`). `Vec2` implements
+  the real operator traits — use `a + b`, `a - b`, `v * k`.
+- Acklam's coefficients in `dist.rs` carry a digit more than f64 holds. The
+  `excessive_precision` lint is allowed there deliberately so the constants stay checkable
+  against the published algorithm. Don't "fix" it.
 
 ---
 

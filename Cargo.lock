@@ -3,9 +3,20 @@
 version = 4
 
 [[package]]
+name = "cf-geom"
+version = "0.1.0"
+dependencies = [
+ "robust",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cf-schema"
 version = "0.1.0"
 dependencies = [
+ "cf-geom",
  "schemars",
  "serde",
  "serde_json",
@@ -69,6 +80,12 @@ checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
 dependencies = [
  "proc-macro2",
 ]
+
+[[package]]
+name = "robust"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e27ee8bb91ca0adcf0ecb116293afa12d393f9c2b9b9cd54d33e8078fe19839"
 
 [[package]]
 name = "schemars"
