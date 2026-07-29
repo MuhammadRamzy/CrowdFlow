@@ -55,12 +55,12 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 
 ### B2 — ECS + locomotion (W8–W14)
 - [ ] SoA `World` with hot/warm/cold array split
-- [ ] Spatial hash with counting-sort rebuild
+- [x] Spatial hash with counting-sort rebuild
 - [ ] Fixed-timestep step loop
 - [ ] Social Force Model: drive, agent repulsion (anisotropic), wall repulsion
 - [ ] PBD contact resolution
 - [ ] Speed distributions + Weidmann density-speed reduction
-- [ ] Seeded PRNG with per-system streams
+- [x] Seeded PRNG with per-system streams (counter-based, order-independent)
 - [ ] RiMEA component tests (walking speed, stairs, corner, speed distribution, door flow)
 - [ ] Fundamental diagram harness vs Weidmann envelope
 - [ ] Determinism gate G2 in CI (x86-64 / aarch64 / wasm32)

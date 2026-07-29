@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["engine/cf-compile", "engine/cf-geom", "engine/cf-navmesh", "engine/cf-schema"]
+members = ["engine/cf-compile", "engine/cf-geom", "engine/cf-navmesh", "engine/cf-schema", "engine/cf-sim"]
 
 [workspace.package]
 version = "0.1.0"

@@ -41,6 +41,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cf-sim"
+version = "0.1.0"
+dependencies = [
+ "cf-geom",
+ "cf-navmesh",
+]
+
+[[package]]
 name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"

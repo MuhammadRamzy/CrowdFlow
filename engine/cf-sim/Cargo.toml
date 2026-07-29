@@ -1,0 +1,14 @@
+[package]
+name = "cf-sim"
+description = "Deterministic agent-based crowd simulation core."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# No serde: cf-sim consumes a compiled NavGraph and ships to browsers as wasm.
+# Keeping serde out of this tree is the reason cf-geom's serde is a feature.
+cf-geom.workspace = true
+cf-navmesh.workspace = true
