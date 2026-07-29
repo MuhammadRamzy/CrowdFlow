@@ -27,12 +27,16 @@
 //! - [`rng`] — counter-based deterministic randomness. **Done.**
 //! - [`spatial`] — uniform grid for neighbour queries. **Done.**
 //! - [`world`] — Structure-of-Arrays agent storage. **Done.**
-//! - Locomotion, contact resolution, the step loop — next.
+//! - [`locomotion`] — Social Force Model + position-based contacts. **Done.**
+//! - The step loop, goals and exits — next.
 
+pub mod fmath;
+pub mod locomotion;
 pub mod rng;
 pub mod spatial;
 pub mod world;
 
+pub use locomotion::{LocomotionParams, LocomotionScratch};
 pub use rng::{Rng, Stream};
 pub use spatial::SpatialGrid;
 pub use world::{AgentId, AgentState, SpawnParams, World, NO_TRIANGLE};

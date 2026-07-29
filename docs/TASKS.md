@@ -57,8 +57,8 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [x] SoA `World` with hot/warm/cold array split, stable agent ids
 - [x] Spatial hash with counting-sort rebuild
 - [ ] Fixed-timestep step loop
-- [ ] Social Force Model: drive, agent repulsion (anisotropic), wall repulsion
-- [ ] PBD contact resolution
+- [x] Social Force Model: drive, agent repulsion (anisotropic), wall repulsion
+- [x] PBD contact resolution (Jacobi, order-independent)
 - [ ] Speed distributions + Weidmann density-speed reduction
 - [x] Seeded PRNG with per-system streams (counter-based, order-independent)
 - [ ] RiMEA component tests (walking speed, stairs, corner, speed distribution, door flow)
