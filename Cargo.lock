@@ -13,6 +13,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cf-navmesh"
+version = "0.1.0"
+dependencies = [
+ "cf-geom",
+]
+
+[[package]]
 name = "cf-schema"
 version = "0.1.0"
 dependencies = [

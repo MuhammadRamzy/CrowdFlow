@@ -101,6 +101,7 @@ jobs:
         run: |
           cargo build --target wasm32-unknown-unknown -p cf-schema
           cargo build --target wasm32-unknown-unknown -p cf-geom --no-default-features
+          cargo build --target wasm32-unknown-unknown -p cf-navmesh
 
   # Gate: no AGPL/GPL/non-commercial dependency may enter the product path.
   # docs/07-infrastructure-and-cost.md §5 — this project intends commercial

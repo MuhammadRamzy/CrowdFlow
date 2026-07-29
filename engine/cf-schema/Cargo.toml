@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-cf-geom.workspace = true
+cf-geom = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true

@@ -1,0 +1,13 @@
+[package]
+name = "cf-navmesh"
+description = "Constrained Delaunay triangulation and navigation mesh construction."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# No serde here by default: the NavGraph is a compiled artifact serialised by
+# cf-compile, and cf-sim consumes it without needing document types.
+cf-geom.workspace = true

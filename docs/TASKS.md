@@ -37,7 +37,8 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [x] `cf-geom`: segment intersection, distance queries, point-in-polygon
 - [x] `cf-geom`: polygon validity (winding, convexity, self-intersection, defects)
 - [x] `cf-geom`: polygon offsetting (wall thickness → obstacle), miter limit + bevel
-- [ ] `cf-navmesh`: constrained Delaunay triangulation
+- [x] `cf-navmesh`: Delaunay triangulation (Bowyer-Watson, exact predicates)
+- [ ] `cf-navmesh`: constraint edge insertion (makes it *constrained* Delaunay)
 - [ ] `cf-navmesh`: refinement, adjacency, portals with clear width
 - [ ] `cf-navmesh`: funnel algorithm for corner-cutting paths
 - [ ] `cf-navmesh`: flow fields (Dijkstra on triangle dual + gradient)
