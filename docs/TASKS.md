@@ -46,6 +46,8 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [x] `cf-navmesh`: funnel algorithm for corner-cutting paths
 - [ ] `cf-navmesh`: flow fields (Dijkstra on triangle dual + gradient)
 - [ ] `cf-navmesh`: multi-floor link portals
+- [ ] `cf-compile`: resolve parametric openings + offset walls to obstacle rings
+- [ ] `cf-compile`: seal door gaps with virtual edges before classify, reopen as portals
 - [ ] `cf-compile`: `VenueDoc` → `NavGraph`
 - [ ] `cf-compile`: `CompileWarning` set (unreachable zone, no exit, narrow opening, …)
 - [ ] Acceptance: compile `convention-hall` fixture < 800 ms, zero unreachable area
