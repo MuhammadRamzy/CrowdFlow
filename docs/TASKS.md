@@ -39,7 +39,7 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [x] `cf-geom`: polygon offsetting (wall thickness → obstacle), miter limit + bevel
 - [x] `cf-navmesh`: Delaunay triangulation (Bowyer-Watson, exact predicates)
 - [x] `cf-navmesh`: constraint edge insertion (makes it *constrained* Delaunay)
-- [ ] `cf-navmesh`: region classification — flood fill walkable vs solid across constraints
+- [x] `cf-navmesh`: region classification — walkable vs solid, with leak detection
 - [ ] `cf-navmesh`: refinement, adjacency, portals with clear width
 - [ ] `cf-navmesh`: funnel algorithm for corner-cutting paths
 - [ ] `cf-navmesh`: flow fields (Dijkstra on triangle dual + gradient)

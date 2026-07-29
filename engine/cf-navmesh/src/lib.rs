@@ -14,7 +14,8 @@
 //!
 //! - [`triangulation`] — unconstrained Delaunay (Bowyer–Watson). **Done.**
 //! - [`constraint`] — constraint edge insertion. **Done.**
-//! - Region classification (which triangles are walkable) — next.
+//! - [`region`] — walkable vs solid classification. **Done.**
+//! - Portals with clear width — next.
 //! - Refinement, portals, funnel, flow fields — after that.
 //!
 //! Constraint insertion is deliberately a separate step built on a verified
@@ -23,9 +24,11 @@
 //! and the symptoms look identical.
 
 pub mod constraint;
+pub mod region;
 pub mod triangulation;
 
 pub use constraint::{insert_constraint, triangulate_constrained, CdtError, ConstraintError};
+pub use region::{classify, walkable_area, RegionWarning, Regions};
 pub use triangulation::{
     edge_key, triangulate, TriIdx, Triangle, Triangulation, TriangulationError, VertIdx,
     NO_NEIGHBOUR,
