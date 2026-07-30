@@ -105,9 +105,19 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 
 ## Track A — Venue Designer + Import
 
+### F — Frontend (re-prioritised; see docs/08-frontend-plan.md)
+- [x] F1 `cf-wasm` bindings — compile + simulate from the browser
+- [x] F2 Vite + React + TS scaffold, design tokens, COOP/COEP headers
+- [x] F3 PixiJS canvas: viewport, grid, venue render, pan/zoom
+- [x] F4 Validation panel driven by real `CompileWarning`s
+- [x] F5 Agent rendering + transport controls — **M1 demo runs in browser**
+- [x] F6 Life-safety status bar with latched peak occupancy
+- [ ] F7 Wall/zone drawing tools + command undo stack
+- [ ] F8 Density heatmap overlay
+
 ### A1 — Canvas core (W3–W8)
-- [ ] Vite + React + TS scaffold
-- [ ] PixiJS viewport: pan, zoom, fit, DPI
+- [x] Vite + React + TS scaffold
+- [x] PixiJS viewport: pan, zoom, fit, DPI
 - [ ] Scene graph + R-tree hit testing
 - [ ] Snapping solver (grid, endpoint, midpoint, intersection, perpendicular, angle)
 - [ ] Document store + `Command` log + undo/redo with coalescing

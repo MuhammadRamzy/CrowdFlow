@@ -1,0 +1,145 @@
+/*
+ * CrowdFlow Studio design tokens.
+ *
+ * The governing rule, from docs/08-frontend-plan.md: the interface has no
+ * colour of its own, because every coloured pixel means something. Density
+ * bands and agent states are data; chrome is graphite. If the chrome is also
+ * colourful, the readout stops being legible at a glance — and reading the
+ * readout at a glance is the entire job.
+ *
+ * State colours are borrowed from life-safety annunciator panels — the
+ * equipment that actually lives in these buildings — so the vocabulary is one
+ * a safety officer already reads without a legend.
+ */
+
+:root {
+  /* --- surfaces ------------------------------------------------------- */
+  --void: #0b0e13;        /* outside the venue; the canvas field */
+  --surface: #141a22;     /* panels, rails */
+  --raised: #1c242f;      /* inputs, cards, hover */
+  --sunken: #0f141b;      /* wells, code, readouts */
+  --line: #263140;        /* rules, borders, grid */
+  --line-strong: #35455a; /* emphasised dividers, focus rings */
+
+  /* --- text ----------------------------------------------------------- */
+  --chalk: #c9d3df;       /* primary — silver pencil on drafting film */
+  --chalk-bright: #eef3f8;/* headings, active values */
+  --muted: #7b8a9b;       /* secondary, units */
+  --faint: #4c5a6b;       /* disabled, placeholders */
+
+  /* --- state: annunciator vocabulary ---------------------------------- */
+  --normal: #3dd68c;
+  --normal-dim: #1d4d39;
+  --supervise: #ffb020;
+  --supervise-dim: #4d3a12;
+  --alarm: #ff4d4d;
+  --alarm-dim: #4d1f1f;
+
+  /* Selection and active tool only. Never decorative. */
+  --select: #58c4e8;
+  --select-dim: #163c4a;
+
+  /* --- density ramp: data, not decoration -----------------------------
+   * Bands are the crowd-science thresholds in persons/m², not arbitrary
+   * stops. 6+ is where forward movement ceases and crush risk begins, so it
+   * is the only place the palette goes truly hot.
+   */
+  --density-0: #1b3a5c;   /* < 1   free flow */
+  --density-1: #2e7d9a;   /* 1–2   comfortable */
+  --density-2: #46b08a;   /* 2–3   steady */
+  --density-3: #c4c04a;   /* 3–4   restricted */
+  --density-4: #e08a3c;   /* 4–6   dense */
+  --density-5: #d43f3f;   /* 6+    critical */
+
+  /* --- type ----------------------------------------------------------- */
+  /* Mono is the primary interface face: nearly every value in this product
+   * is a measurement, and measurements want tabular figures. */
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-sans: 'IBM Plex Sans Condensed', 'IBM Plex Sans', system-ui, sans-serif;
+
+  --t-micro: 10px;
+  --t-small: 11px;
+  --t-base: 12px;   /* the workhorse */
+  --t-mid: 13px;
+  --t-lead: 15px;
+  --t-head: 18px;
+  --t-display: 24px;
+
+  /* --- metrics -------------------------------------------------------- */
+  --rail: 44px;
+  --inspector: 280px;
+  --status-h: 46px;
+  --timeline-h: 40px;
+
+  --r-sm: 2px;
+  --r-md: 3px;   /* deliberately tight: this is an instrument, not a card UI */
+
+  --gap-1: 4px;
+  --gap-2: 8px;
+  --gap-3: 12px;
+  --gap-4: 16px;
+  --gap-5: 24px;
+
+  --ease: cubic-bezier(0.2, 0, 0.1, 1);
+}
+
+/* The workspace commits to dark. A cream field fights a density heatmap, and
+ * this is a surface people sit in for hours. The exported report is the
+ * light-on-paper artefact; see docs/08-frontend-plan.md. */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--void);
+  color: var(--chalk);
+  font-family: var(--font-mono);
+  font-size: var(--t-base);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+/* Focus must be visible and must not be the same colour as a state, or a
+ * keyboard user cannot tell "focused" from "in alarm". */
+:focus-visible {
+  outline: 2px solid var(--select);
+  outline-offset: 1px;
+}
+
+::selection {
+  background: var(--select-dim);
+  color: var(--chalk-bright);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

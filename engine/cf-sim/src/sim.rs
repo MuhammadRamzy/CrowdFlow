@@ -122,7 +122,15 @@ pub struct Sim {
     walls: Vec<Segment>,
     exits: Vec<ExitSpan>,
     routes: Vec<Route>,
-    stats: SimStats,
+    /// Diagnostics from the most recent tick only.
+    last_solve: SolveDiagnostics,
+}
+
+/// Per-tick solver health, which cannot be derived from world state.
+#[derive(Clone, Copy, Debug, Default)]
+struct SolveDiagnostics {
+    max_overlap: f32,
+    escaped: u32,
 }
 
 impl Sim {
@@ -140,7 +148,7 @@ impl Sim {
             walls: Vec::new(),
             exits: Vec::new(),
             routes: Vec::new(),
-            stats: SimStats::default(),
+            last_solve: SolveDiagnostics::default(),
         }
     }
 
@@ -176,7 +184,7 @@ impl Sim {
             walls,
             exits,
             routes: Vec::new(),
-            stats: SimStats::default(),
+            last_solve: SolveDiagnostics::default(),
         }
     }
 
@@ -192,8 +200,31 @@ impl Sim {
         &self.walls
     }
 
+    /// Current counters.
+    ///
+    /// Computed from the world rather than returned from a cache. A cached
+    /// value is wrong in exactly the case that matters most: immediately after
+    /// spawning, before the first tick, when a UI asks "what did I just
+    /// create?" and a stale struct answers "nothing".
     pub fn stats(&self) -> SimStats {
-        self.stats
+        SimStats {
+            tick: self.world.tick,
+            time: self.world.time,
+            active: self.world.active_count(),
+            exited: self.world.exited_count(),
+            spawned: self.world.spawned_count(),
+            blocked: self
+                .world
+                .state
+                .iter()
+                .zip(&self.world.active)
+                .filter(|(s, a)| **a && **s == AgentState::Blocked)
+                .count() as u32,
+            // These two describe the most recent tick, so they do come from the
+            // last step; before any step they are legitimately zero.
+            max_overlap: self.last_solve.max_overlap,
+            escaped: self.last_solve.escaped,
+        }
     }
 
     /// Spawn an agent and immediately plan its route to `goal`.
@@ -335,23 +366,11 @@ impl Sim {
         self.world.tick += 1;
         self.world.time = self.world.tick as f64 * self.params.dt;
 
-        self.stats = SimStats {
-            tick: self.world.tick,
-            time: self.world.time,
-            active: self.world.active_count(),
-            exited: self.world.exited_count(),
-            spawned: self.world.spawned_count(),
-            blocked: self
-                .world
-                .state
-                .iter()
-                .zip(&self.world.active)
-                .filter(|(s, a)| **a && **s == AgentState::Blocked)
-                .count() as u32,
+        self.last_solve = SolveDiagnostics {
             max_overlap: max_overlap.max(wall_pen),
             escaped,
         };
-        self.stats
+        self.stats()
     }
 
     /// Run until everyone has left or `max_ticks` elapse.

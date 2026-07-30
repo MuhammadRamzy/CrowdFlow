@@ -1,0 +1,522 @@
+/*
+ * Workspace layout and components.
+ *
+ * Discipline note: every colour here is a token. If a value appears literally
+ * in this file it is a bug — the palette rule in docs/08-frontend-plan.md only
+ * holds if there is one place to change it.
+ */
+
+.shell {
+  display: grid;
+  grid-template-rows: var(--status-h) 1fr var(--timeline-h);
+  height: 100%;
+}
+
+.body {
+  display: grid;
+  grid-template-columns: var(--rail) 1fr var(--inspector);
+  min-height: 0;
+}
+
+/* --- boot ------------------------------------------------------------- */
+
+.boot {
+  display: grid;
+  place-content: center;
+  gap: var(--gap-2);
+  height: 100%;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: var(--t-small);
+}
+
+.boot-error {
+  color: var(--alarm);
+  text-transform: none;
+  letter-spacing: 0;
+  text-align: center;
+  padding: var(--gap-5);
+}
+
+.boot-error h1 {
+  color: var(--chalk-bright);
+  font-size: var(--t-head);
+}
+
+.boot-hint {
+  color: var(--muted);
+}
+
+.boot-hint code {
+  background: var(--sunken);
+  padding: 1px 5px;
+  border-radius: var(--r-sm);
+}
+
+/* --- status bar: the signature ---------------------------------------- */
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-4);
+  padding: 0 var(--gap-3);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  /* A hairline of state colour along the bottom edge: readable peripherally,
+     which is the point of an annunciator. */
+  box-shadow: inset 0 -2px 0 0 var(--state-colour, transparent);
+  --state-colour: var(--normal);
+}
+
+.statusbar.state-normal    { --state-colour: var(--normal); }
+.statusbar.state-supervise { --state-colour: var(--supervise); }
+.statusbar.state-alarm     { --state-colour: var(--alarm); }
+
+.sb-verdict {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  padding: var(--gap-1) var(--gap-3);
+  border: 1px solid var(--state-colour);
+  border-radius: var(--r-md);
+  color: var(--state-colour);
+  background: color-mix(in srgb, var(--state-colour) 10%, transparent);
+  white-space: nowrap;
+}
+
+.sb-glyph {
+  font-size: var(--t-mid);
+  line-height: 1;
+}
+
+.sb-state {
+  font-size: var(--t-small);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+}
+
+/* Only alarm pulses. If everything moved, nothing would read as urgent. */
+.statusbar.state-alarm .sb-glyph {
+  animation: pulse 1.6s var(--ease) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+.sb-venue {
+  font-family: var(--font-sans);
+  font-size: var(--t-mid);
+  color: var(--chalk-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 28ch;
+}
+
+.sb-fields {
+  display: flex;
+  gap: var(--gap-5);
+  margin-left: auto;
+  align-items: center;
+}
+
+.sb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sb-label {
+  font-size: var(--t-micro);
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+.sb-value {
+  font-size: var(--t-mid);
+  color: var(--chalk-bright);
+  white-space: nowrap;
+}
+
+.sb-value.is-breached {
+  color: var(--alarm);
+}
+
+.sb-limit,
+.sb-unit {
+  color: var(--muted);
+  font-size: var(--t-small);
+}
+
+.sb-value.is-breached .sb-limit {
+  color: color-mix(in srgb, var(--alarm) 65%, var(--muted));
+}
+
+.sb-note {
+  color: var(--alarm);
+  font-size: var(--t-small);
+  white-space: nowrap;
+}
+
+/* --- tool rail --------------------------------------------------------- */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-1);
+  padding: var(--gap-2) 0;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+}
+
+.rail-spacer {
+  flex: 1;
+}
+
+.rail-btn {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--t-mid);
+  transition: color 120ms var(--ease), background 120ms var(--ease);
+}
+
+.rail-btn:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--chalk);
+}
+
+.rail-btn.is-active {
+  color: var(--select);
+  border-color: var(--select-dim);
+  background: var(--select-dim);
+}
+
+.rail-btn:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+/* --- canvas ------------------------------------------------------------ */
+
+.canvas-host {
+  position: relative;
+  min-width: 0;
+  background: var(--void);
+  overflow: hidden;
+  cursor: grab;
+}
+
+.canvas-host:active {
+  cursor: grabbing;
+}
+
+.canvas-host canvas {
+  display: block;
+}
+
+/* --- inspector --------------------------------------------------------- */
+
+.inspector {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+}
+
+.panel {
+  padding: var(--gap-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--t-micro);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: var(--gap-3) 0 var(--gap-2);
+}
+
+.panel-title:first-child {
+  margin-top: 0;
+}
+
+.panel-count {
+  font-family: var(--font-mono);
+  color: var(--faint);
+  letter-spacing: 0;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-2);
+  background: var(--sunken);
+}
+
+.row-label {
+  color: var(--muted);
+  font-size: var(--t-small);
+}
+
+.row-value {
+  color: var(--chalk-bright);
+  text-align: right;
+}
+
+.row-note {
+  display: block;
+  color: var(--faint);
+  font-size: var(--t-micro);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  margin: var(--gap-2) 0;
+}
+
+.field-label {
+  color: var(--muted);
+  font-size: var(--t-small);
+}
+
+.field-input {
+  width: 96px;
+  padding: var(--gap-1) var(--gap-2);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  color: var(--chalk-bright);
+  text-align: right;
+}
+
+.field-input:focus {
+  border-color: var(--select);
+}
+
+.actions {
+  display: flex;
+  gap: var(--gap-2);
+  margin: var(--gap-2) 0;
+}
+
+.btn {
+  flex: 1;
+  padding: var(--gap-2);
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  color: var(--chalk);
+  cursor: pointer;
+  font-size: var(--t-small);
+  transition: background 120ms var(--ease), border-color 120ms var(--ease);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--line);
+  border-color: var(--select);
+}
+
+.btn:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+  border-color: var(--line);
+}
+
+.btn-primary {
+  border-color: var(--select-dim);
+  color: var(--select);
+}
+
+.btn-icon {
+  flex: 0 0 32px;
+  padding: var(--gap-1);
+}
+
+.build {
+  color: var(--faint);
+  font-size: var(--t-micro);
+  margin: var(--gap-3) 0 0;
+  word-break: break-all;
+}
+
+/* --- validation -------------------------------------------------------- */
+
+.empty {
+  color: var(--faint);
+  font-size: var(--t-small);
+  margin: 0;
+}
+
+.issues {
+  list-style: none;
+  margin: 0 0 var(--gap-2);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
+}
+
+.issue {
+  padding: var(--gap-2);
+  background: var(--sunken);
+  border-left: 2px solid var(--supervise);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+}
+
+.issue.is-fatal {
+  border-left-color: var(--alarm);
+}
+
+.issue-code {
+  display: block;
+  font-size: var(--t-micro);
+  letter-spacing: 0.08em;
+  color: var(--supervise);
+}
+
+.issue.is-fatal .issue-code {
+  color: var(--alarm);
+}
+
+.issue-msg {
+  display: block;
+  color: var(--chalk);
+  font-size: var(--t-small);
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+/* --- timeline ---------------------------------------------------------- */
+
+.timeline {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-4);
+  padding: 0 var(--gap-3);
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+
+.transport {
+  display: flex;
+  gap: var(--gap-1);
+}
+
+.clock {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-2);
+}
+
+.clock-time {
+  font-size: var(--t-lead);
+  color: var(--chalk-bright);
+}
+
+.clock-unit {
+  font-size: var(--t-micro);
+  letter-spacing: 0.12em;
+  color: var(--faint);
+  text-transform: uppercase;
+}
+
+.speeds {
+  display: flex;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.speed {
+  padding: 3px var(--gap-2);
+  background: var(--sunken);
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--t-small);
+}
+
+.speed:hover {
+  color: var(--chalk);
+}
+
+.speed.is-active {
+  background: var(--select-dim);
+  color: var(--select);
+}
+
+.counters {
+  display: flex;
+  gap: var(--gap-4);
+  margin-left: auto;
+  font-size: var(--t-small);
+  color: var(--muted);
+}
+
+.counter b {
+  color: var(--chalk-bright);
+  font-weight: 500;
+}
+
+.counter.is-done {
+  color: var(--normal);
+}
+
+.counter.is-done b {
+  color: var(--normal);
+}
+
+.counter.is-muted {
+  color: var(--faint);
+}
+
+/* --- narrow screens ---------------------------------------------------- */
+
+@media (max-width: 1100px) {
+  .body {
+    grid-template-columns: var(--rail) 1fr 240px;
+  }
+  .sb-fields {
+    gap: var(--gap-3);
+  }
+}
+
+@media (max-width: 860px) {
+  .sb-venue,
+  .sb-field:nth-child(n + 3) {
+    display: none;
+  }
+}

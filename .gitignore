@@ -27,6 +27,12 @@ __pycache__/
 !.vscode/extensions.json
 
 # Build output — regenerate with `pnpm --dir web engine`
+/web/dist/
+/web/tsconfig.tsbuildinfo
+
+# Playwright MCP scratch output
+.playwright-mcp/
+*.png
 /web/src/engine/
 *.wasm
 
