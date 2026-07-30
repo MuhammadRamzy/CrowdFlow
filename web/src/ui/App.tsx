@@ -26,6 +26,8 @@ import { Inspector } from './Inspector';
 import { StatusBar } from './StatusBar';
 import { Timeline } from './Timeline';
 import { Validation } from './Validation';
+import { Report } from '../report/Report';
+import type { ReportData } from '../report/Report';
 import fixtureJson from '../../../fixtures/unit/hall-two-doors.venue.json?raw';
 
 /** What each tool expects the user to do. Present tense, no exclamation. */
@@ -59,6 +61,7 @@ export function App() {
   // when rendererRef is still null — and never again, so canvas input works
   // only after the user happens to switch tools.
   const [rendererReady, setRendererReady] = useState(false);
+  const [report, setReport] = useState<ReportData | null>(null);
   const [tool, setTool] = useState<ToolId>('select');
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -433,6 +436,29 @@ export function App() {
     };
   }, [tool, undo, redo, runCommand, deleteSelection]);
 
+  /** Assemble the dossier from whatever the engine has actually produced. */
+  const openReport = useCallback(async () => {
+    const st = useApp.getState();
+    // Snapshot the canvas as it stands: the drawing in the report is the venue
+    // that was analysed, at the zoom the reviewer left it.
+    const plan = (await rendererRef.current?.snapshot()) ?? null;
+    setReport({
+      venueName: st.venueName,
+      document: historyRef.current?.document ?? null,
+      walkableArea: st.walkableArea,
+      warnings: st.warnings,
+      stats: st.stats,
+      egressTime: st.egressTime,
+      peakOccupancy: st.peakOccupancy,
+      peakDensity: st.peakDensity,
+      criticalArea: st.criticalArea,
+      thresholds: st.thresholds,
+      engineVersion: st.engineVersion,
+      plan,
+      generatedAt: new Date(),
+    });
+  }, []);
+
   const onLoadFile = useCallback(
     async (file: File) => {
       try {
@@ -454,6 +480,10 @@ export function App() {
         </p>
       </div>
     );
+  }
+
+  if (report) {
+    return <Report data={report} onClose={() => setReport(null)} />;
   }
 
   return (
@@ -490,6 +520,7 @@ export function App() {
           <RailButton label="Undo (⌘Z)" glyph="↶" onClick={undo} disabled={!canUndo} />
           <RailButton label="Redo (⇧⌘Z)" glyph="↷" onClick={redo} disabled={!canRedo} />
           <RailButton label="Fit view" glyph="⤢" onClick={() => rendererRef.current?.fit()} />
+          <RailButton label="Compliance report" glyph="▤" onClick={openReport} />
         </nav>
 
         <div

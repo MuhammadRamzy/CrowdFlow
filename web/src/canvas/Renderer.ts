@@ -120,6 +120,19 @@ export class Renderer {
     this.app.renderer.on('resize', () => this.redrawStatic());
   }
 
+  /**
+   * A PNG snapshot of the current view, as a data URL.
+   *
+   * Extracted through Pixi rather than `canvas.toDataURL`, because a WebGL
+   * context without `preserveDrawingBuffer` returns a blank image — the buffer
+   * is already gone by the time a caller asks. Pixi re-renders into a texture
+   * and reads that back, which always works and does not cost a frame of
+   * interactive performance to keep enabled.
+   */
+  async snapshot(): Promise<string> {
+    return this.app.renderer.extract.base64({ target: this.app.stage, format: 'png' });
+  }
+
   destroy(): void {
     this.app?.destroy(true, { children: true });
   }

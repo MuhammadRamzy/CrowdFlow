@@ -115,6 +115,7 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [x] F6 Life-safety status bar with latched peak occupancy
 - [x] F7 Wall, zone and door tools + selection, property editing, undo/redo
 - [x] F8 Density heatmap overlay with banded legend
+- [x] F9 Compliance dossier — findings, recommendations, print/PDF export
 
 ### A1 — Canvas core (W3–W8)
 - [x] Vite + React + TS scaffold
@@ -184,10 +185,11 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [ ] Density heatmap shader with 2/4/6 p/m² banding
 - [ ] Flow lines, dwell map, bottleneck markers
 - [ ] Throughput charts, Fruin LOS bands
-- [ ] Report composer (Typst) + section toggles
-- [ ] Auto-generated recommendations from failed compliance rules
+- [x] Report composer (print CSS, browser PDF pipeline)
+- [ ] Section toggles
+- [x] Auto-generated recommendations with computed shortfalls
 - [ ] CSV exports + Bill of Materials
-- [ ] Verification statement on every export
+- [x] Verification statement on every export
 
 ## P5 — Hardening + beta (W29–W34)
 

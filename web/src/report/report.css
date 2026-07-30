@@ -1,0 +1,378 @@
+/*
+ * The compliance dossier.
+ *
+ * Deliberately the opposite surface to the workspace. The workspace is a dark
+ * instrument; this is a drawing on paper — the cream-and-navy register the
+ * pitch deck established, which is right for something printed, filed and
+ * handed to a licensing authority.
+ *
+ * Sized to A4 and styled for print first. The on-screen preview is the same
+ * document at the same measure, so what a reviewer sees is what prints.
+ */
+
+.report-root {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow-y: auto;
+  background: #6b6558;
+  padding: 0 0 48px;
+}
+
+/* --- the toolbar above the sheet, never printed ----------------------- */
+
+.report-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-4);
+  padding: var(--gap-2) var(--gap-4);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  color: var(--chalk);
+}
+
+.report-bar-title {
+  font-size: var(--t-micro);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.report-bar-actions {
+  display: flex;
+  gap: var(--gap-2);
+}
+
+.report-bar .btn {
+  flex: 0 0 auto;
+  padding: var(--gap-1) var(--gap-3);
+}
+
+/* --- the sheet --------------------------------------------------------- */
+
+.sheet {
+  --paper: #f4f1ea;
+  --navy: #16233d;
+  --rule: #c9c2b2;
+  --ink: #2a3346;
+  --quiet: #6c7385;
+  --fail: #a8322c;
+  --pass: #2f6b46;
+
+  width: 210mm;
+  min-height: 297mm;
+  margin: 24px auto;
+  padding: 18mm 16mm;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 10pt;
+  line-height: 1.5;
+  box-shadow: 0 2px 24px rgb(0 0 0 / 35%);
+}
+
+.sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gap-4);
+  padding-bottom: 6mm;
+  border-bottom: 1.5pt solid var(--navy);
+}
+
+.eyebrow {
+  margin: 0 0 2mm;
+  font-family: var(--font-mono);
+  font-size: 7.5pt;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--quiet);
+}
+
+.sheet h1 {
+  margin: 0;
+  font-size: 22pt;
+  line-height: 1.15;
+  color: var(--navy);
+  letter-spacing: -0.01em;
+}
+
+.verdict {
+  flex: 0 0 auto;
+  padding: 2mm 4mm;
+  border: 1pt solid currentColor;
+  border-radius: 1mm;
+  font-family: var(--font-mono);
+  font-size: 8pt;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.verdict-pass {
+  color: var(--pass);
+}
+
+.verdict-fail {
+  color: var(--fail);
+}
+
+/* --- headline metrics -------------------------------------------------- */
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  margin: 6mm 0 8mm;
+  border: 0.75pt solid var(--rule);
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 1mm;
+  padding: 4mm;
+  border-right: 0.75pt solid var(--rule);
+}
+
+.metric:last-child {
+  border-right: 0;
+}
+
+.metric-label {
+  font-family: var(--font-mono);
+  font-size: 6.5pt;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--quiet);
+}
+
+.metric-value {
+  font-family: var(--font-mono);
+  font-size: 15pt;
+  color: var(--navy);
+}
+
+.metric-note {
+  font-size: 7pt;
+  color: var(--quiet);
+}
+
+/* --- plan -------------------------------------------------------------- */
+
+.plan {
+  margin: 0 0 8mm;
+}
+
+.plan img {
+  display: block;
+  width: 100%;
+  border: 0.75pt solid var(--rule);
+  /* The workspace is dark, so its snapshot is dark. Keeping it on the sheet
+     rather than recolouring it is honest: this is what was analysed. */
+  background: #0b0e13;
+}
+
+.plan figcaption {
+  margin-top: 2mm;
+  font-size: 7.5pt;
+  color: var(--quiet);
+}
+
+/* --- sections ---------------------------------------------------------- */
+
+.sheet section {
+  margin-bottom: 8mm;
+  break-inside: avoid;
+}
+
+.sheet h2 {
+  margin: 0 0 3mm;
+  padding-bottom: 1.5mm;
+  border-bottom: 0.75pt solid var(--rule);
+  font-size: 11pt;
+  color: var(--navy);
+  letter-spacing: 0.02em;
+}
+
+.sheet h3 {
+  margin: 0 0 2mm;
+  font-size: 9.5pt;
+  color: var(--navy);
+}
+
+.muted {
+  color: var(--quiet);
+  font-size: 9pt;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 8.5pt;
+}
+
+/* --- tables ------------------------------------------------------------ */
+
+.spec,
+.findings {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9pt;
+}
+
+.spec th,
+.spec td {
+  padding: 2mm 3mm 2mm 0;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 0.5pt solid var(--rule);
+}
+
+.spec th {
+  width: 34mm;
+  font-family: var(--font-mono);
+  font-size: 7.5pt;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--quiet);
+}
+
+.findings th {
+  padding: 0 3mm 2mm 0;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 7pt;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--quiet);
+  border-bottom: 1pt solid var(--navy);
+}
+
+.findings td {
+  padding: 2.5mm 3mm 2.5mm 0;
+  vertical-align: top;
+  border-bottom: 0.5pt solid var(--rule);
+}
+
+.findings .result {
+  width: 16mm;
+  font-family: var(--font-mono);
+  font-size: 8pt;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pass);
+}
+
+.findings tr.is-fail .result {
+  color: var(--fail);
+  font-weight: 600;
+}
+
+/* A failed row carries a rule in the margin: findable when flicking through a
+   printed dossier, and it survives being photocopied in black and white. */
+.findings tr.is-fail td:first-child {
+  border-left: 1.5pt solid var(--fail);
+  padding-left: 2mm;
+}
+
+.finding-clause {
+  font-family: var(--font-mono);
+  font-size: 8pt;
+  color: var(--navy);
+}
+
+/* --- recommendations and diagnostics ----------------------------------- */
+
+.recommendations {
+  margin: 0;
+  padding-left: 5mm;
+  font-size: 9.5pt;
+}
+
+.recommendations li {
+  margin-bottom: 2.5mm;
+}
+
+.diagnostics {
+  margin: 3mm 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 8.5pt;
+}
+
+.diagnostics li {
+  padding: 1.5mm 0 1.5mm 3mm;
+  border-left: 1pt solid var(--rule);
+  margin-bottom: 1mm;
+}
+
+.diagnostics li.is-fatal {
+  border-left-color: var(--fail);
+}
+
+.diag-code {
+  font-family: var(--font-mono);
+  font-size: 7.5pt;
+  color: var(--quiet);
+  margin-right: 1.5mm;
+}
+
+/* --- verification statement -------------------------------------------- */
+
+.statement {
+  margin-top: 10mm;
+  padding-top: 4mm;
+  border-top: 1.5pt solid var(--navy);
+  font-size: 8.5pt;
+  color: var(--quiet);
+  break-inside: avoid;
+}
+
+.statement p {
+  margin: 0 0 2.5mm;
+}
+
+.statement strong {
+  color: var(--fail);
+}
+
+/* --- print ------------------------------------------------------------- */
+
+@page {
+  size: A4;
+  margin: 0;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .report-root {
+    position: static;
+    padding: 0;
+    background: #fff;
+    overflow: visible;
+  }
+
+  .sheet {
+    width: auto;
+    min-height: auto;
+    margin: 0;
+    box-shadow: none;
+  }
+
+  /* Backgrounds and rules must survive: without this a browser drops the
+     paper tint and the failure markers, and the dossier prints as plain text
+     with no visible structure. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
