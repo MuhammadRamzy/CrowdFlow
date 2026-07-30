@@ -614,3 +614,57 @@
   background: var(--alarm-dim);
   border-color: var(--alarm);
 }
+
+/* --- property fields --------------------------------------------------- */
+
+.field-group {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-1);
+}
+
+.field-unit {
+  color: var(--muted);
+  font-size: var(--t-small);
+  min-width: 2ch;
+}
+
+.field-input {
+  width: 72px;
+}
+
+/* A value below a code minimum is stated as such, not merely coloured — but
+   the colour makes it findable at a glance. */
+.field-input.is-warn {
+  border-color: var(--supervise);
+  color: var(--supervise);
+}
+
+.field-select {
+  flex: 1;
+  min-width: 0;
+  padding: var(--gap-1) var(--gap-2);
+  background: var(--sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  color: var(--chalk-bright);
+  font-size: var(--t-small);
+  cursor: pointer;
+}
+
+.field-select:focus {
+  border-color: var(--select);
+}
+
+/* Strip the platform spinner: it is chrome we did not design and it fights the
+   instrument register. Values change by typing or by the step keys. */
+.field-input::-webkit-outer-spin-button,
+.field-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.field-input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

@@ -14,7 +14,7 @@
  * moved on.
  */
 
-import type { Opening, VenueDoc, Wall, Zone } from '../schema/venue';
+import type { Opening, VenueDoc, Wall, Zone, ZoneKind } from '../schema/venue';
 
 export interface Command {
   /** Stable identifier, shown in the history and used for coalescing. */
@@ -215,8 +215,152 @@ export class RemoveZone implements Command {
 }
 
 // ---------------------------------------------------------------------------
+// Property edits
+// ---------------------------------------------------------------------------
+
+/**
+ * Change one field of one element.
+ *
+ * Generic rather than a command per property: the alternative is a dozen
+ * near-identical classes that differ only in a field name, and each one is
+ * another chance to write an `invert` that restores the wrong thing.
+ *
+ * The previous value is captured at construction, not read back at undo time —
+ * by then the document has moved on and the old value is gone.
+ */
+export class SetProperty<T> implements Command {
+  readonly kind: string;
+  readonly label: string;
+  readonly coalesceKey: string;
+  private readonly previous: T;
+
+  constructor(
+    private readonly floorId: string,
+    private readonly collection: 'walls' | 'openings' | 'zones',
+    private readonly elementId: string,
+    private readonly field: string,
+    private readonly value: T,
+    doc: VenueDoc,
+    label?: string,
+  ) {
+    this.kind = `${collection}.set.${field}`;
+    this.label = label ?? `Change ${field}`;
+    // A drag over a numeric field emits many commands; they merge into one
+    // undo entry because a user considers the whole gesture a single change.
+    this.coalesceKey = `${collection}:${elementId}:${field}`;
+
+    const el = SetProperty.find(doc, floorId, collection, elementId);
+    this.previous = (el as Record<string, unknown>)?.[field] as T;
+  }
+
+  private static find(
+    doc: VenueDoc,
+    floorId: string,
+    collection: 'walls' | 'openings' | 'zones',
+    id: string,
+  ): unknown {
+    const f = doc.floors.find((x) => x.id === floorId);
+    if (!f) return undefined;
+    const list = (f[collection] ?? []) as Array<{ id: string }>;
+    return list.find((e) => e.id === id);
+  }
+
+  apply(doc: VenueDoc): VenueDoc {
+    const next = clone(doc);
+    const f = floorOf(next, this.floorId);
+    const list = (f[this.collection] ?? []) as unknown as Array<Record<string, unknown>>;
+    const el = list.find((e) => e.id === this.elementId);
+    if (el) el[this.field] = this.value as unknown;
+    return next;
+  }
+
+  invert(): Command {
+    // Reconstructing needs a document to read the old value from, which is
+    // exactly what we already captured — so build the inverse directly.
+    const inverse = Object.create(SetProperty.prototype) as SetProperty<T>;
+    Object.assign(inverse, {
+      floorId: this.floorId,
+      collection: this.collection,
+      elementId: this.elementId,
+      field: this.field,
+      value: this.previous,
+      previous: this.value,
+      kind: this.kind,
+      label: this.label,
+      coalesceKey: this.coalesceKey,
+    });
+    return inverse;
+  }
+}
+
+/** Set a doorway's clear width, in metres. */
+export function setOpeningWidth(
+  doc: VenueDoc,
+  floorId: string,
+  openingId: string,
+  widthM: number,
+): Command {
+  return new SetProperty(floorId, 'openings', openingId, 'widthM', widthM, doc, 'Change door width');
+}
+
+/** Mark a doorway as a fire exit, or not. */
+export function setOpeningFireExit(
+  doc: VenueDoc,
+  floorId: string,
+  openingId: string,
+  isFireExit: boolean,
+): Command {
+  return new SetProperty(
+    floorId,
+    'openings',
+    openingId,
+    'isFireExit',
+    isFireExit,
+    doc,
+    isFireExit ? 'Mark as fire exit' : 'Clear fire exit',
+  );
+}
+
+/** Set a wall's thickness, in metres. */
+export function setWallThickness(
+  doc: VenueDoc,
+  floorId: string,
+  wallId: string,
+  thicknessM: number,
+): Command {
+  return new SetProperty(
+    floorId,
+    'walls',
+    wallId,
+    'thicknessM',
+    thicknessM,
+    doc,
+    'Change wall thickness',
+  );
+}
+
+/**
+ * Set a zone's occupancy classification.
+ *
+ * This is the field NFPA 101 occupant load is derived from, so changing it
+ * changes the venue's legal capacity — which is why it is a command with an
+ * undo entry rather than a quiet edit.
+ */
+export function setZoneKind(
+  doc: VenueDoc,
+  floorId: string,
+  zoneId: string,
+  kind: ZoneKind,
+): Command {
+  return new SetProperty(floorId, 'zones', zoneId, 'kind', kind, doc, 'Change zone use');
+}
+
+// ---------------------------------------------------------------------------
 // History
 // ---------------------------------------------------------------------------
+
+/** Edits closer together than this merge into one undo entry. */
+const COALESCE_WINDOW_MS = 700;
 
 /**
  * An undo/redo stack over a document.
@@ -229,6 +373,7 @@ export class RemoveZone implements Command {
 export class History {
   private undoStack: Command[] = [];
   private redoStack: Command[] = [];
+  private lastRunAt = 0;
 
   constructor(
     private doc: VenueDoc,
@@ -257,9 +402,30 @@ export class History {
     return this.redoStack.at(-1)?.label ?? null;
   }
 
-  /** Apply a command and push its inverse. */
+  /**
+   * Apply a command and push its inverse.
+   *
+   * Commands sharing a `coalesceKey` with the previous one replace it rather
+   * than stacking: dragging a width slider emits dozens of edits and a user
+   * expects one undo to reverse the whole gesture, not thirty.
+   */
   run(cmd: Command): VenueDoc {
     this.doc = cmd.apply(this.doc);
+
+    const top = this.undoStack.at(-1);
+    const merge =
+      cmd.coalesceKey !== undefined &&
+      top?.coalesceKey === cmd.coalesceKey &&
+      Date.now() - this.lastRunAt < COALESCE_WINDOW_MS;
+    this.lastRunAt = Date.now();
+
+    if (merge) {
+      // Keep the *older* inverse: it restores the value before the gesture
+      // began, which is what undoing the gesture means.
+      this.redoStack = [];
+      return this.doc;
+    }
+
     this.undoStack.push(cmd.invert());
     if (this.undoStack.length > this.limit) this.undoStack.shift();
     // A new action makes the redo branch unreachable. Keeping it would let a

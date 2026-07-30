@@ -9,7 +9,14 @@
 import { useRef } from 'react';
 import type { Selection } from '../canvas/tools';
 import { polylineLength } from '../canvas/tools';
-import type { VenueDoc } from '../schema/venue';
+import type { VenueDoc, ZoneKind } from '../schema/venue';
+import type { Command } from '../doc/commands';
+import {
+  setOpeningFireExit,
+  setOpeningWidth,
+  setWallThickness,
+  setZoneKind,
+} from '../doc/commands';
 import { occupantLoad, useApp } from '../state/store';
 
 interface Props {
@@ -19,6 +26,7 @@ interface Props {
   selection: Selection | null;
   document: VenueDoc | null;
   onDeleteSelection: () => void;
+  onEdit: (cmd: Command) => void;
   onLoadFile: (f: File) => void;
   onReset: () => void;
 }
@@ -29,6 +37,7 @@ export function Inspector({
   selection,
   document: doc,
   onDeleteSelection,
+  onEdit,
   onLoadFile,
   onReset,
 }: Props) {
@@ -55,7 +64,12 @@ export function Inspector({
   return (
     <section className="panel">
       {selection && doc && (
-        <SelectionPanel selection={selection} doc={doc} onDelete={onDeleteSelection} />
+        <SelectionPanel
+          selection={selection}
+          doc={doc}
+          onDelete={onDeleteSelection}
+          onEdit={onEdit}
+        />
       )}
 
       <h2 className="panel-title">Venue</h2>
@@ -187,70 +201,249 @@ function SelectionPanel({
   selection,
   doc,
   onDelete,
+  onEdit,
 }: {
   selection: Selection;
   doc: VenueDoc;
   onDelete: () => void;
+  onEdit: (cmd: Command) => void;
 }) {
   const floor = doc.floors[0];
-  const rows: Array<[string, string, string?]> = [];
-  let title = 'Selection';
+  if (!floor) return null;
+  const floorId = floor.id;
 
-  if (floor && selection.kind === 'wall') {
+  if (selection.kind === 'wall') {
     const w = (floor.walls ?? []).find((x) => x.id === selection.id);
-    if (w) {
-      title = 'Wall';
-      rows.push(['Length', `${polylineLength(w.polyline).toFixed(2)} m`]);
-      rows.push(['Thickness', `${(w.thicknessM ?? 0.2).toFixed(2)} m`]);
-      rows.push(['Vertices', String(w.polyline.length)]);
-      rows.push(['Kind', w.kind ?? 'structural']);
-      const doors = (floor.openings ?? []).filter((o) => o.wall === w.id).length;
-      if (doors > 0) rows.push(['Openings', String(doors), 'removed with the wall']);
-    }
-  } else if (floor && selection.kind === 'zone') {
-    const z = (floor.zones ?? []).find((x) => x.id === selection.id);
-    if (z) {
-      title = 'Zone';
-      const area = polygonArea(z.polygon);
-      rows.push(['Area', `${area.toFixed(1)} m²`]);
-      rows.push(['Kind', String(z.kind)]);
-      rows.push(['Vertices', String(z.polygon.length)]);
-    }
-  } else if (floor && selection.kind === 'opening') {
-    const o = (floor.openings ?? []).find((x) => x.id === selection.id);
-    if (o) {
-      title = 'Doorway';
-      rows.push(['Clear width', `${o.widthM.toFixed(2)} m`, o.widthM < 0.85 ? 'below minimum' : undefined]);
-      rows.push(['Kind', o.kind ?? 'door']);
-      rows.push(['Fire exit', o.isFireExit ? 'yes' : 'no']);
-      // Green Guide: 82 persons per metre per minute on the level.
-      rows.push([
-        'Rate of passage',
-        `${Math.round(o.widthM * 82)} p/min`,
-        'Green Guide, level',
-      ]);
-    }
+    if (!w) return null;
+    const doors = (floor.openings ?? []).filter((o) => o.wall === w.id).length;
+    return (
+      <Panel title="Wall" id={w.id} onDelete={onDelete}>
+        <div className="rows">
+          <Row label="Length" value={`${polylineLength(w.polyline).toFixed(2)} m`} />
+          <Row label="Vertices" value={String(w.polyline.length)} />
+          <Row label="Kind" value={w.kind ?? 'structural'} />
+          {doors > 0 && (
+            <Row label="Openings" value={String(doors)} note="removed with the wall" />
+          )}
+        </div>
+        <NumberField
+          label="Thickness"
+          unit="m"
+          value={w.thicknessM ?? 0.2}
+          min={0.05}
+          max={2}
+          step={0.01}
+          onChange={(v) => onEdit(setWallThickness(doc, floorId, w.id, v))}
+        />
+      </Panel>
+    );
   }
 
-  if (!rows.length) return null;
+  if (selection.kind === 'zone') {
+    const z = (floor.zones ?? []).find((x) => x.id === selection.id);
+    if (!z) return null;
+    const area = polygonArea(z.polygon);
+    const olf = OCCUPANT_LOAD_FACTORS[z.kind as ZoneKind] ?? null;
+    return (
+      <Panel title="Zone" id={z.id} onDelete={onDelete}>
+        <div className="rows">
+          <Row label="Area" value={`${area.toFixed(1)} m²`} />
+          <Row label="Vertices" value={String(z.polygon.length)} />
+          {olf !== null && (
+            <Row
+              label="Occupant load"
+              value={Math.floor(area / olf).toLocaleString()}
+              note={`NFPA 101 · ${olf} m²/p`}
+            />
+          )}
+        </div>
+        <SelectField
+          label="Use"
+          value={String(z.kind)}
+          options={Object.keys(OCCUPANT_LOAD_FACTORS).map((k) => [k, ZONE_LABELS[k] ?? k])}
+          onChange={(v) => onEdit(setZoneKind(doc, floorId, z.id, v as ZoneKind))}
+        />
+      </Panel>
+    );
+  }
 
+  const o = (floor.openings ?? []).find((x) => x.id === selection.id);
+  if (!o) return null;
+  const narrow = o.widthM < MIN_EGRESS_WIDTH_M;
+  return (
+    <Panel title="Doorway" id={o.id} onDelete={onDelete}>
+      <NumberField
+        label="Clear width"
+        unit="m"
+        value={o.widthM}
+        min={0.3}
+        max={12}
+        step={0.05}
+        warn={narrow}
+        onChange={(v) => onEdit(setOpeningWidth(doc, floorId, o.id, v))}
+      />
+      <div className="rows">
+        <Row label="Kind" value={o.kind ?? 'door'} />
+        <Row
+          label="Rate of passage"
+          value={`${Math.round(o.widthM * GREEN_GUIDE_LEVEL)} p/min`}
+          note="Green Guide, level"
+        />
+        {narrow && (
+          <Row
+            label="Minimum"
+            value={`${MIN_EGRESS_WIDTH_M.toFixed(2)} m`}
+            note="below the egress minimum"
+          />
+        )}
+      </div>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={o.isFireExit ?? false}
+          onChange={(e) => onEdit(setOpeningFireExit(doc, floorId, o.id, e.target.checked))}
+        />
+        <span>Fire exit</span>
+      </label>
+    </Panel>
+  );
+}
+
+/** Green Guide rate of passage on the level, persons per metre per minute. */
+const GREEN_GUIDE_LEVEL = 82;
+/** NFPA 101 requires 32 in clear; 0.85 m leaves margin for door hardware. */
+const MIN_EGRESS_WIDTH_M = 0.85;
+
+/** NFPA 101 Table 7.3.1.2, net m² per person. */
+const OCCUPANT_LOAD_FACTORS: Record<string, number> = {
+  assemblyStandingSpace: 0.46,
+  assemblyConcentrated: 0.65,
+  assemblyLessConcentrated: 1.4,
+  assemblyFixedSeating: 0.65,
+  circulation: 1.4,
+  mercantile: 2.8,
+  business: 9.3,
+  storage: 46.5,
+  backOfHouse: 9.3,
+  queue: 0.46,
+  restricted: 9.3,
+  exterior: 9.3,
+};
+
+const ZONE_LABELS: Record<string, string> = {
+  assemblyStandingSpace: 'Assembly — standing',
+  assemblyConcentrated: 'Assembly — concentrated',
+  assemblyLessConcentrated: 'Assembly — dining/exhibition',
+  assemblyFixedSeating: 'Assembly — fixed seating',
+  circulation: 'Circulation',
+  mercantile: 'Mercantile',
+  business: 'Business',
+  storage: 'Storage',
+  backOfHouse: 'Back of house',
+  queue: 'Queue',
+  restricted: 'Restricted',
+  exterior: 'Exterior',
+};
+
+function Panel({
+  title,
+  id,
+  onDelete,
+  children,
+}: {
+  title: string;
+  id: string;
+  onDelete: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <>
       <h2 className="panel-title">
         {title}
-        <span className="panel-count">{selection.id}</span>
+        <span className="panel-count">{id}</span>
       </h2>
-      <div className="rows">
-        {rows.map(([label, value, note]) => (
-          <Row key={label} label={label} value={value} note={note} />
-        ))}
-      </div>
+      {children}
       <div className="actions">
         <button type="button" className="btn btn-danger" onClick={onDelete}>
           Delete
         </button>
       </div>
     </>
+  );
+}
+
+/**
+ * A numeric property.
+ *
+ * Committed on change rather than on blur, so the compliance figures beside it
+ * move as the value does — watching the rate of passage climb while widening a
+ * door is the point. Rapid edits coalesce into one undo entry.
+ */
+function NumberField({
+  label,
+  unit,
+  value,
+  min,
+  max,
+  step,
+  warn,
+  onChange,
+}: {
+  label: string;
+  unit: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  warn?: boolean;
+  onChange: (v: number) => void;
+}) {
+  const commit = (raw: string) => {
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return;
+    onChange(Math.min(max, Math.max(min, n)));
+  };
+  return (
+    <label className="field">
+      <span className="field-label">{label}</span>
+      <span className="field-group">
+        <input
+          className={`field-input${warn ? ' is-warn' : ''}`}
+          type="number"
+          value={value}
+          min={min}
+          max={max}
+          step={step}
+          onChange={(e) => commit(e.target.value)}
+        />
+        <span className="field-unit">{unit}</span>
+      </span>
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: Array<[string, string]>;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="field">
+      <span className="field-label">{label}</span>
+      <select className="field-select" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map(([v, text]) => (
+          <option key={v} value={v}>
+            {text}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

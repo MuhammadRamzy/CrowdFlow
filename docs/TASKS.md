@@ -113,7 +113,7 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [x] F4 Validation panel driven by real `CompileWarning`s
 - [x] F5 Agent rendering + transport controls — **M1 demo runs in browser**
 - [x] F6 Life-safety status bar with latched peak occupancy
-- [x] F7 Wall, zone and door tools + selection, delete, command undo stack
+- [x] F7 Wall, zone and door tools + selection, property editing, undo/redo
 - [x] F8 Density heatmap overlay with banded legend
 
 ### A1 — Canvas core (W3–W8)
@@ -136,7 +136,7 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 ### A2 — Semantic authoring + components (W7–W12)
 - [x] Opening placement on walls (parametric `t`)
 - [ ] Zone drawing + "detect rooms" from wall loops
-- [ ] Zone inspector with live NFPA occupant-load preview
+- [x] Zone inspector with live NFPA occupant-load preview
 - [ ] Component palette + per-type inspectors
 - [ ] Component ↔ queue-area binding
 - [ ] Multi-floor stack + trace-below underlay

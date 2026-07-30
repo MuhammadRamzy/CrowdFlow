@@ -53,6 +53,12 @@ export function App() {
   // state — otherwise Play stays disabled after agents are placed.
   const [hasRun, setHasRun] = useState(false);
   const [placedAgents, setPlacedAgents] = useState(0);
+  // The renderer is created asynchronously in the boot effect, so effects that
+  // attach to it must depend on something that changes when it appears.
+  // Without this the input handler is installed on the very first render —
+  // when rendererRef is still null — and never again, so canvas input works
+  // only after the user happens to switch tools.
+  const [rendererReady, setRendererReady] = useState(false);
   const [tool, setTool] = useState<ToolId>('select');
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -127,10 +133,23 @@ export function App() {
         const r = new Renderer();
         await r.mount(hostRef.current);
         rendererRef.current = r;
+        setRendererReady(true);
 
         setEngineVersion(engineVersion());
         compile(fixtureJson, 'Hall with two doors');
         setPhase('ready');
+
+        // A dev-only handle on the internals. Driving the real UI is how the
+        // last four bugs were found, and reaching the renderer and document
+        // from the console is what makes that practical.
+        if (import.meta.env.DEV) {
+          (window as unknown as Record<string, unknown>).__cf = {
+            renderer: () => rendererRef.current,
+            doc: () => historyRef.current?.document,
+            run: () => runRef.current,
+            hitTest,
+          };
+        }
       } catch (e) {
         setPhase('error', e instanceof Error ? e.message : String(e));
       }
@@ -308,7 +327,7 @@ export function App() {
     return () => {
       r.onWorldPointer = null;
     };
-  }, [tool, runCommand]);
+  }, [tool, runCommand, rendererReady]);
 
   // Highlight the selection on the canvas. The inspector panel alone is not
   // enough feedback when the thing selected is one wall among many.
@@ -344,7 +363,7 @@ export function App() {
       const b = pointAtParam(w.polyline, Math.min(1, o.t + half));
       r.setSelection(a && b ? [a, b] : null, false);
     }
-  }, [selection, canUndo, canRedo]);
+  }, [selection, canUndo, canRedo, rendererReady]);
 
   /** Delete whatever is selected. */
   const deleteSelection = useCallback(() => {
@@ -490,6 +509,7 @@ export function App() {
             selection={selection}
             document={historyRef.current?.document ?? null}
             onDeleteSelection={deleteSelection}
+            onEdit={runCommand}
           />
           <Validation />
         </aside>
