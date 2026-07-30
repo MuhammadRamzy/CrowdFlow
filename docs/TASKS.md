@@ -21,7 +21,7 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [x] First shared fixture (`hall-two-doors`)
 - [x] `CLAUDE.md`, `docs/STATE.md`, `/handoff` skill
 - [x] CI: fmt, clippy, test, schema-drift gate
-- [ ] Codegen → TypeScript types (`web/src/schema/`)
+- [x] Codegen → TypeScript types (`pnpm schema`, generated from `schema/`)
 - [ ] Codegen → Pydantic models (`services/api/`)
 - [ ] Cross-language round-trip test (same fixture, three languages, identical structure)
 - [ ] `licence-check` CI job (`cargo-deny`, `pip-licenses`, `license-checker`)
@@ -113,16 +113,18 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [x] F4 Validation panel driven by real `CompileWarning`s
 - [x] F5 Agent rendering + transport controls — **M1 demo runs in browser**
 - [x] F6 Life-safety status bar with latched peak occupancy
-- [ ] F7 Wall/zone drawing tools + command undo stack
+- [x] F7 Wall drawing tool + command undo stack (zone/door tools remain)
 - [x] F8 Density heatmap overlay with banded legend
 
 ### A1 — Canvas core (W3–W8)
 - [x] Vite + React + TS scaffold
 - [x] PixiJS viewport: pan, zoom, fit, DPI
 - [ ] Scene graph + R-tree hit testing
-- [ ] Snapping solver (grid, endpoint, midpoint, intersection, perpendicular, angle)
-- [ ] Document store + `Command` log + undo/redo with coalescing
-- [ ] Wall tool, rect/polygon tool
+- [x] Snapping: grid, vertex, 45° ortho lock
+- [ ] Snapping: midpoint, intersection, perpendicular
+- [x] Document store + `Command` log + undo/redo
+- [x] Wall tool
+- [ ] Rect/polygon tool
 - [ ] Selection + multi-select transform
 - [ ] Vertex editing
 - [ ] Layer panel

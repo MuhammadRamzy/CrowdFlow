@@ -16,11 +16,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// A point or vector in floor-local metres.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-#[cfg_attr(feature = "serde", derive(JsonSchema))]
-#[cfg_attr(
-    feature = "serde",
-    schemars(with = "[f64; 2]", description = "A 2D point in metres, as [x, y].")
-)]
 pub struct Vec2 {
     pub x: f64,
     pub y: f64,
@@ -141,6 +136,28 @@ impl<'de> Deserialize<'de> for Vec2 {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let [x, y] = <[f64; 2]>::deserialize(d)?;
         Ok(Vec2 { x, y })
+    }
+}
+
+/// Hand-written so the schema matches what `Serialize` actually produces.
+///
+/// `#[schemars(with = "[f64; 2]")]` at the container level is silently ignored
+/// by the derive — it generated an object `{x, y}` while serde wrote an array
+/// `[x, y]`. Nothing failed: the Rust round-tripped fine, and the divergence
+/// only surfaced when the generated TypeScript was first used to build a
+/// document the engine then rejected. Delegating explicitly cannot drift.
+#[cfg(feature = "serde")]
+impl JsonSchema for Vec2 {
+    fn schema_name() -> String {
+        "Vec2".to_owned()
+    }
+
+    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        let mut schema = <[f64; 2]>::json_schema(gen);
+        if let schemars::schema::Schema::Object(o) = &mut schema {
+            o.metadata().description = Some("A 2D point in metres, as [x, y].".to_owned());
+        }
+        schema
     }
 }
 

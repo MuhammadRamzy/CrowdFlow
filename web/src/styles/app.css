@@ -580,3 +580,26 @@
   line-height: 1.5;
   margin: var(--gap-1) 0 var(--gap-2);
 }
+
+.canvas-host.is-drawing {
+  cursor: crosshair;
+}
+
+.canvas-host.is-drawing:active {
+  cursor: crosshair;
+}
+
+.tool-hint {
+  position: absolute;
+  left: 50%;
+  bottom: var(--gap-3);
+  transform: translateX(-50%);
+  padding: var(--gap-1) var(--gap-3);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  color: var(--muted);
+  font-size: var(--t-micro);
+  white-space: nowrap;
+  pointer-events: none;
+}

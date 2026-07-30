@@ -211,3 +211,52 @@ fn an_opening_wider_than_its_wall_is_rejected() {
     assert!(report.has_errors());
     assert!(report.errors().any(|i| i.code == "opening.wider_than_wall"));
 }
+
+/// The schema must describe what `Serialize` actually writes.
+///
+/// These can diverge silently. `#[schemars(with = ...)]` at the container level
+/// is ignored by the derive, so `Vec2` declared an object `{x, y}` while serde
+/// wrote an array `[x, y]`. Every Rust test still passed — the divergence only
+/// appeared when generated TypeScript was used to build a document, which the
+/// engine then rejected.
+///
+/// Rather than validate the whole document against the schema (which would
+/// need a JSON Schema implementation as a dependency), this walks the fixture
+/// alongside the schema's declared types for the shapes that actually matter.
+#[test]
+fn serialized_shapes_match_the_declared_schema() {
+    let schema_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("schema");
+    let text = std::fs::read_to_string(schema_dir.join("venue.schema.json"))
+        .expect("run: cargo run -p cf-schema --bin gen-schema");
+    let schema: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let defs = &schema["definitions"];
+
+    // A point is an array of two numbers, not an object.
+    assert_eq!(
+        defs["Vec2"]["type"], "array",
+        "Vec2 must be declared as an array; serde writes [x, y]"
+    );
+    assert_eq!(defs["Vec2"]["minItems"], 2);
+    assert_eq!(defs["Vec2"]["maxItems"], 2);
+
+    // And the fixture agrees.
+    let v = load_venue_fixture("unit/hall-two-doors.venue.json");
+    let json = serde_json::to_value(&v).unwrap();
+    let first_point = &json["floors"][0]["walls"][0]["polyline"][0];
+    assert!(
+        first_point.is_array(),
+        "a serialized point should be an array, got {first_point}"
+    );
+    assert_eq!(first_point.as_array().unwrap().len(), 2);
+
+    // Polylines and polygons are arrays of points, not wrapper objects.
+    for (path, value) in [
+        ("polyline", &json["floors"][0]["walls"][0]["polyline"]),
+        ("polygon", &json["floors"][0]["zones"][0]["polygon"]),
+    ] {
+        assert!(value.is_array(), "{path} should serialize as an array");
+    }
+}

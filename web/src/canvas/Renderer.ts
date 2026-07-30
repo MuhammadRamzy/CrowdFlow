@@ -48,6 +48,13 @@ export class Renderer {
   private heatSprite: Sprite | null = null;
   private heatCanvas: HTMLCanvasElement | null = null;
   private ramp: Uint8Array | null = null;
+  private previewLayer = new Graphics();
+  private snapLayer = new Graphics();
+  /** Set by the host so tools receive world-space pointer events. */
+  onWorldPointer: ((p: { x: number; y: number }, kind: 'move' | 'down' | 'dblclick') => void) | null =
+    null;
+  /** True while a drawing tool is active; suppresses pan-drag. */
+  drawing = false;
   private agents!: ParticleContainer;
   private particles: Particle[] = [];
   private dot!: Texture;
@@ -61,6 +68,7 @@ export class Renderer {
     door: 0x3dd68c,
     walking: 0x58c4e8,
     blocked: 0xffb020,
+    select: 0x58c4e8,
   };
 
   async mount(host: HTMLElement): Promise<void> {
@@ -71,6 +79,7 @@ export class Renderer {
       door: token('--normal', 0x3dd68c),
       walking: token('--select', 0x58c4e8),
       blocked: token('--supervise', 0xffb020),
+      select: token('--select', 0x58c4e8),
     };
 
     this.app = new Application();
@@ -100,6 +109,8 @@ export class Renderer {
       this.wallLayer,
       this.doorLayer,
       this.agents,
+      this.previewLayer,
+      this.snapLayer,
     );
     this.app.stage.addChild(this.world);
 
@@ -193,6 +204,46 @@ export class Renderer {
     s.width = cols * field.cell;
     s.height = -rows * field.cell;
     s.position.set(field.originX, -field.originY);
+  }
+
+  /** Draw the in-progress polyline and the snapped cursor. */
+  setPreview(points: Array<{ x: number; y: number }>, snapped: { x: number; y: number } | null): void {
+    const px = 1 / this.view.scale;
+
+    const g = this.previewLayer.clear();
+    if (points.length >= 2) {
+      g.moveTo(points[0]!.x, -points[0]!.y);
+      for (let i = 1; i < points.length; i++) g.lineTo(points[i]!.x, -points[i]!.y);
+      g.stroke({ color: this.colours.select, width: px * 2, alpha: 0.95 });
+    }
+    // Committed vertices, so a user can see what they have placed.
+    for (let i = 0; i < points.length; i++) {
+      g.circle(points[i]!.x, -points[i]!.y, px * 3).fill({
+        color: this.colours.select,
+        alpha: 0.9,
+      });
+    }
+
+    const s = this.snapLayer.clear();
+    if (snapped) {
+      // A crosshair rather than a dot: it shows the exact point without hiding
+      // the geometry underneath it, which matters when snapping to a corner.
+      const r = px * 7;
+      s.moveTo(snapped.x - r, -snapped.y).lineTo(snapped.x + r, -snapped.y);
+      s.moveTo(snapped.x, -snapped.y - r).lineTo(snapped.x, -snapped.y + r);
+      s.stroke({ color: this.colours.select, width: px, alpha: 0.85 });
+    }
+  }
+
+  clearPreview(): void {
+    this.previewLayer.clear();
+    this.snapLayer.clear();
+  }
+
+  /** Convert a client-space event position to world metres. */
+  toWorld(clientX: number, clientY: number, host: HTMLElement): { x: number; y: number } {
+    const rect = host.getBoundingClientRect();
+    return this.screenToWorld(clientX - rect.left, clientY - rect.top);
   }
 
   /** Replace the venue geometry and fit it to the viewport. */
@@ -338,7 +389,15 @@ export class Renderer {
     let lastX = 0;
     let lastY = 0;
 
+    host.addEventListener('dblclick', (e) => {
+      if (this.drawing) this.onWorldPointer?.(this.toWorld(e.clientX, e.clientY, host), 'dblclick');
+    });
+
     host.addEventListener('pointerdown', (e) => {
+      if (this.drawing) {
+        this.onWorldPointer?.(this.toWorld(e.clientX, e.clientY, host), 'down');
+        return;
+      }
       dragging = true;
       lastX = e.clientX;
       lastY = e.clientY;
@@ -349,6 +408,10 @@ export class Renderer {
       host.releasePointerCapture(e.pointerId);
     });
     host.addEventListener('pointermove', (e) => {
+      if (this.drawing) {
+        this.onWorldPointer?.(this.toWorld(e.clientX, e.clientY, host), 'move');
+        return;
+      }
       if (!dragging) return;
       this.view.cx -= (e.clientX - lastX) / this.view.scale;
       this.view.cy += (e.clientY - lastY) / this.view.scale;
