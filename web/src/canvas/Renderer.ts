@@ -50,6 +50,7 @@ export class Renderer {
   private ramp: Uint8Array | null = null;
   private previewLayer = new Graphics();
   private snapLayer = new Graphics();
+  private selectLayer = new Graphics();
   /** Set by the host so tools receive world-space pointer events. */
   onWorldPointer: ((p: { x: number; y: number }, kind: 'move' | 'down' | 'dblclick') => void) | null =
     null;
@@ -110,6 +111,7 @@ export class Renderer {
       this.doorLayer,
       this.agents,
       this.previewLayer,
+      this.selectLayer,
       this.snapLayer,
     );
     this.app.stage.addChild(this.world);
@@ -232,6 +234,24 @@ export class Renderer {
       s.moveTo(snapped.x - r, -snapped.y).lineTo(snapped.x + r, -snapped.y);
       s.moveTo(snapped.x, -snapped.y - r).lineTo(snapped.x, -snapped.y + r);
       s.stroke({ color: this.colours.select, width: px, alpha: 0.85 });
+    }
+  }
+
+  /** Highlight the selected element. Pass null to clear. */
+  setSelection(points: Array<{ x: number; y: number }> | null, closed: boolean): void {
+    const g = this.selectLayer.clear();
+    if (!points || points.length < 2) return;
+    const px = 1 / this.view.scale;
+
+    g.moveTo(points[0]!.x, -points[0]!.y);
+    for (let i = 1; i < points.length; i++) g.lineTo(points[i]!.x, -points[i]!.y);
+    if (closed) g.closePath();
+    // Drawn heavier than the geometry beneath so it reads as "this one",
+    // without changing the colour of the thing being inspected.
+    g.stroke({ color: this.colours.select, width: px * 4, alpha: 0.9 });
+
+    for (const p of points) {
+      g.circle(p.x, -p.y, px * 3.5).fill({ color: this.colours.select, alpha: 1 });
     }
   }
 
@@ -385,40 +405,64 @@ export class Renderer {
   }
 
   private installInput(host: HTMLElement): void {
-    let dragging = false;
+    let pointerDown = false;
+    let panning = false;
     let lastX = 0;
     let lastY = 0;
+    let downX = 0;
+    let downY = 0;
+
+    // A click selects; a drag pans. Distinguished by whether the pointer moved
+    // more than a few pixels — which is how every CAD tool behaves, and the
+    // reason a select tool still needs pointer events rather than surrendering
+    // them all to panning.
+    const DRAG_THRESHOLD_PX = 4;
 
     host.addEventListener('dblclick', (e) => {
-      if (this.drawing) this.onWorldPointer?.(this.toWorld(e.clientX, e.clientY, host), 'dblclick');
+      this.onWorldPointer?.(this.toWorld(e.clientX, e.clientY, host), 'dblclick');
     });
 
     host.addEventListener('pointerdown', (e) => {
+      pointerDown = true;
+      panning = false;
+      lastX = downX = e.clientX;
+      lastY = downY = e.clientY;
+      host.setPointerCapture(e.pointerId);
+      // A drawing tool acts on press; select waits to see if this is a drag.
       if (this.drawing) {
         this.onWorldPointer?.(this.toWorld(e.clientX, e.clientY, host), 'down');
-        return;
       }
-      dragging = true;
-      lastX = e.clientX;
-      lastY = e.clientY;
-      host.setPointerCapture(e.pointerId);
     });
+
     host.addEventListener('pointerup', (e) => {
-      dragging = false;
+      if (pointerDown && !panning && !this.drawing) {
+        // Moved less than the threshold, so it was a click, not a pan.
+        this.onWorldPointer?.(this.toWorld(e.clientX, e.clientY, host), 'down');
+      }
+      pointerDown = false;
+      panning = false;
       host.releasePointerCapture(e.pointerId);
     });
+
     host.addEventListener('pointermove', (e) => {
-      if (this.drawing) {
-        this.onWorldPointer?.(this.toWorld(e.clientX, e.clientY, host), 'move');
-        return;
+      // Tools always see movement, so previews track the cursor.
+      this.onWorldPointer?.(this.toWorld(e.clientX, e.clientY, host), 'move');
+
+      if (!pointerDown || this.drawing) return;
+
+      if (!panning) {
+        const moved = Math.hypot(e.clientX - downX, e.clientY - downY);
+        if (moved < DRAG_THRESHOLD_PX) return;
+        panning = true;
       }
-      if (!dragging) return;
+
       this.view.cx -= (e.clientX - lastX) / this.view.scale;
       this.view.cy += (e.clientY - lastY) / this.view.scale;
       lastX = e.clientX;
       lastY = e.clientY;
       this.applyTransform();
     });
+
     host.addEventListener(
       'wheel',
       (e) => {

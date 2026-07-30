@@ -8,9 +8,17 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Renderer } from '../canvas/Renderer';
-import { collectVertices, DEFAULT_SNAP, snap, WallTool } from '../canvas/tools';
-import type { Point, ToolId } from '../canvas/tools';
-import { History } from '../doc/commands';
+import {
+  collectVertices,
+  DEFAULT_SNAP,
+  DoorTool,
+  hitTest,
+  snap,
+  WallTool,
+  ZoneTool,
+} from '../canvas/tools';
+import type { Point, Selection, ToolId } from '../canvas/tools';
+import { History, RemoveOpening, RemoveWall, RemoveZone } from '../doc/commands';
 import type { VenueDoc } from '../schema/venue';
 import { engineVersion, loadEngine, Run, Venue } from '../engine/bridge';
 import { useApp } from '../state/store';
@@ -19,6 +27,13 @@ import { StatusBar } from './StatusBar';
 import { Timeline } from './Timeline';
 import { Validation } from './Validation';
 import fixtureJson from '../../../fixtures/unit/hall-two-doors.venue.json?raw';
+
+/** What each tool expects the user to do. Present tense, no exclamation. */
+const HINTS: Record<Exclude<ToolId, 'select'>, string> = {
+  wall: 'Click to place points · Shift constrains to 45° · double-click or Enter to finish · Esc cancels',
+  zone: 'Click to outline an area · three points minimum · double-click or Enter to close · Esc cancels',
+  door: 'Click a wall to place a 1.8 m doorway · Esc returns to select',
+};
 
 /** Physics runs at 20 Hz; this is the tick length in milliseconds. */
 const TICK_MS = 50;
@@ -43,6 +58,9 @@ export function App() {
   const [canRedo, setCanRedo] = useState(false);
   const historyRef = useRef<History | null>(null);
   const wallToolRef = useRef(new WallTool());
+  const zoneToolRef = useRef(new ZoneTool());
+  const doorToolRef = useRef(new DoorTool());
+  const [selection, setSelection] = useState<Selection | null>(null);
   const orthoRef = useRef(false);
 
   const {
@@ -228,49 +246,125 @@ export function App() {
     recompile();
   }, [recompile]);
 
-  // Drawing input. The renderer forwards world-space pointer events while a
-  // tool is active; panning is suspended so a click means "place a point".
+  // Canvas input. The renderer forwards world-space pointer events while a tool
+  // is active; panning is suspended so a click means "act here".
   useEffect(() => {
     const r = rendererRef.current;
     if (!r) return;
-    r.drawing = tool === 'wall';
-    if (tool !== 'wall') {
+
+    const drawing = tool === 'wall' || tool === 'zone' || tool === 'door';
+    r.drawing = drawing;
+    if (!drawing) {
       wallToolRef.current.cancel();
+      zoneToolRef.current.cancel();
       r.clearPreview();
-      r.onWorldPointer = null;
-      return;
     }
 
     const floorId = historyRef.current?.document.floors[0]?.id ?? 'f0';
 
-    const resolve = (p: Point): Point => {
+    const resolve = (p: Point, anchor?: Point): Point => {
       const doc = historyRef.current?.document;
       const verts = doc ? collectVertices(doc, floorId) : [];
-      const wt = wallToolRef.current;
-      const anchor = wt.preview().at(-2) ?? undefined;
       return snap(p, verts, { ...DEFAULT_SNAP, ortho: orthoRef.current }, anchor);
     };
 
     r.onWorldPointer = (raw, kind) => {
-      const wt = wallToolRef.current;
-      const p = resolve(raw);
+      const doc = historyRef.current?.document;
+      if (!doc) return;
+
+      if (tool === 'select') {
+        if (kind === 'down') setSelection(hitTest(doc, floorId, raw, 0.4));
+        return;
+      }
+
+      if (tool === 'door') {
+        const hit = doorToolRef.current.hover(doc, floorId, raw);
+        // Preview the exact spot on the wall, so it is obvious which wall a
+        // door will land on before committing.
+        r.setPreview([], hit ? hit.point : null);
+        if (kind === 'down' && hit) {
+          runCommand(doorToolRef.current.place(floorId, hit.wallId, hit.t));
+        }
+        return;
+      }
+
+      const t = tool === 'wall' ? wallToolRef.current : zoneToolRef.current;
+      const anchor = t.preview().at(-2) ?? undefined;
+      const p = resolve(raw, anchor);
+
       if (kind === 'move') {
-        wt.moveTo(p);
+        t.moveTo(p);
       } else if (kind === 'down') {
-        wt.addPoint(p);
+        t.addPoint(p);
       } else if (kind === 'dblclick') {
-        const cmd = wt.finish(floorId);
+        const cmd = t.finish(floorId);
         r.clearPreview();
         if (cmd) runCommand(cmd);
         return;
       }
-      r.setPreview(wt.preview(), p);
+      r.setPreview(t.preview(), p);
     };
 
     return () => {
       r.onWorldPointer = null;
     };
   }, [tool, runCommand]);
+
+  // Highlight the selection on the canvas. The inspector panel alone is not
+  // enough feedback when the thing selected is one wall among many.
+  useEffect(() => {
+    const r = rendererRef.current;
+    const doc = historyRef.current?.document;
+    if (!r) return;
+    if (!selection || !doc) {
+      r.setSelection(null, false);
+      return;
+    }
+    const floor = doc.floors[0];
+    if (!floor) return;
+
+    if (selection.kind === 'wall') {
+      const w = (floor.walls ?? []).find((x) => x.id === selection.id);
+      r.setSelection(w ? w.polyline.map((q) => ({ x: q[0]!, y: q[1]! })) : null, false);
+    } else if (selection.kind === 'zone') {
+      const z = (floor.zones ?? []).find((x) => x.id === selection.id);
+      r.setSelection(z ? z.polygon.map((q) => ({ x: q[0]!, y: q[1]! })) : null, true);
+    } else {
+      const o = (floor.openings ?? []).find((x) => x.id === selection.id);
+      const w = o && (floor.walls ?? []).find((x) => x.id === o.wall);
+      if (!o || !w) {
+        r.setSelection(null, false);
+        return;
+      }
+      // Draw the doorway's actual span along its wall, not just a marker: the
+      // clear width is the figure that matters and it should be visible.
+      const total = polylineLengthOf(w.polyline);
+      const half = o.widthM / 2 / total;
+      const a = pointAtParam(w.polyline, Math.max(0, o.t - half));
+      const b = pointAtParam(w.polyline, Math.min(1, o.t + half));
+      r.setSelection(a && b ? [a, b] : null, false);
+    }
+  }, [selection, canUndo, canRedo]);
+
+  /** Delete whatever is selected. */
+  const deleteSelection = useCallback(() => {
+    const h = historyRef.current;
+    if (!h || !selection) return;
+    const floor = h.document.floors[0];
+    if (!floor) return;
+
+    if (selection.kind === 'wall') {
+      const wall = (floor.walls ?? []).find((w) => w.id === selection.id);
+      if (wall) runCommand(new RemoveWall(floor.id, wall));
+    } else if (selection.kind === 'zone') {
+      const zone = (floor.zones ?? []).find((z) => z.id === selection.id);
+      if (zone) runCommand(new RemoveZone(floor.id, zone));
+    } else {
+      const op = (floor.openings ?? []).find((o) => o.id === selection.id);
+      if (op) runCommand(new RemoveOpening(floor.id, op));
+    }
+    setSelection(null);
+  }, [selection, runCommand]);
 
   // Keyboard: undo/redo, finish or abandon a wall, ortho lock.
   useEffect(() => {
@@ -286,17 +380,28 @@ export function App() {
       }
       if (e.key === 'Escape') {
         wallToolRef.current.cancel();
+        zoneToolRef.current.cancel();
         rendererRef.current?.clearPreview();
+        setSelection(null);
         setTool('select');
       }
-      if (e.key === 'Enter' && tool === 'wall') {
+      if (e.key === 'Enter' && (tool === 'wall' || tool === 'zone')) {
         const floorId = historyRef.current?.document.floors[0]?.id ?? 'f0';
-        const cmd = wallToolRef.current.finish(floorId);
+        const t = tool === 'wall' ? wallToolRef.current : zoneToolRef.current;
+        const cmd = t.finish(floorId);
         rendererRef.current?.clearPreview();
         if (cmd) runCommand(cmd);
       }
-      if (e.key === 'w' && !mod) setTool('wall');
-      if (e.key === 'v' && !mod) setTool('select');
+      if ((e.key === 'Delete' || e.key === 'Backspace') && tool === 'select') {
+        e.preventDefault();
+        deleteSelection();
+      }
+      if (!mod) {
+        if (e.key === 'v') setTool('select');
+        if (e.key === 'w') setTool('wall');
+        if (e.key === 'z' && !e.shiftKey) setTool('zone');
+        if (e.key === 'd') setTool('door');
+      }
     };
     const up = (e: KeyboardEvent) => {
       if (e.key === 'Shift') orthoRef.current = false;
@@ -307,7 +412,7 @@ export function App() {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
     };
-  }, [tool, undo, redo, runCommand]);
+  }, [tool, undo, redo, runCommand, deleteSelection]);
 
   const onLoadFile = useCallback(
     async (file: File) => {
@@ -350,22 +455,30 @@ export function App() {
             active={tool === 'wall'}
             onClick={() => setTool('wall')}
           />
-          <RailButton label="Zone" glyph="▢" disabled />
-          <RailButton label="Door" glyph="◠" disabled />
+          <RailButton
+            label="Draw zone (Z)"
+            glyph="▢"
+            active={tool === 'zone'}
+            onClick={() => setTool('zone')}
+          />
+          <RailButton
+            label="Place door (D)"
+            glyph="◠"
+            active={tool === 'door'}
+            onClick={() => setTool('door')}
+          />
           <div className="rail-spacer" />
           <RailButton label="Undo (⌘Z)" glyph="↶" onClick={undo} disabled={!canUndo} />
           <RailButton label="Redo (⇧⌘Z)" glyph="↷" onClick={redo} disabled={!canRedo} />
           <RailButton label="Fit view" glyph="⤢" onClick={() => rendererRef.current?.fit()} />
         </nav>
 
-        <div className={`canvas-host${tool === 'wall' ? ' is-drawing' : ''}`} ref={hostRef}>
+        <div
+          className={`canvas-host${tool !== 'select' ? ' is-drawing' : ''}`}
+          ref={hostRef}
+        >
           {phase === 'loading' && <div className="boot">Starting engine…</div>}
-          {tool === 'wall' && (
-            <div className="tool-hint">
-              Click to place points · Shift to constrain · double-click or Enter to finish ·
-              Esc to cancel
-            </div>
-          )}
+          {tool !== 'select' && <div className="tool-hint">{HINTS[tool]}</div>}
         </div>
 
         <aside className="inspector" aria-label="Inspector">
@@ -374,6 +487,9 @@ export function App() {
             placedAgents={placedAgents}
             onLoadFile={onLoadFile}
             onReset={reset}
+            selection={selection}
+            document={historyRef.current?.document ?? null}
+            onDeleteSelection={deleteSelection}
           />
           <Validation />
         </aside>
@@ -382,6 +498,36 @@ export function App() {
       <Timeline onReset={reset} hasRun={hasRun} />
     </div>
   );
+}
+
+/** Total arc length of a polyline, metres. */
+function polylineLengthOf(poly: number[][]): number {
+  let total = 0;
+  for (let i = 0; i + 1 < poly.length; i++) {
+    total += Math.hypot(poly[i + 1]![0]! - poly[i]![0]!, poly[i + 1]![1]! - poly[i]![1]!);
+  }
+  return total;
+}
+
+/** Point at normalised arc-length `t`, matching `Polyline::point_at` in Rust. */
+function pointAtParam(poly: number[][], t: number): { x: number; y: number } | null {
+  if (poly.length < 2) return null;
+  const total = polylineLengthOf(poly);
+  if (total <= 0) return { x: poly[0]![0]!, y: poly[0]![1]! };
+  const target = Math.max(0, Math.min(1, t)) * total;
+  let walked = 0;
+  for (let i = 0; i + 1 < poly.length; i++) {
+    const seg = Math.hypot(poly[i + 1]![0]! - poly[i]![0]!, poly[i + 1]![1]! - poly[i]![1]!);
+    if (walked + seg >= target) {
+      const local = seg > 0 ? (target - walked) / seg : 0;
+      return {
+        x: poly[i]![0]! + (poly[i + 1]![0]! - poly[i]![0]!) * local,
+        y: poly[i]![1]! + (poly[i + 1]![1]! - poly[i]![1]!) * local,
+      };
+    }
+    walked += seg;
+  }
+  return { x: poly.at(-1)![0]!, y: poly.at(-1)![1]! };
 }
 
 function RailButton({

@@ -603,3 +603,14 @@
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* A destructive action reads as one, without shouting until hovered. */
+.btn-danger {
+  border-color: var(--alarm-dim);
+  color: var(--alarm);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--alarm-dim);
+  border-color: var(--alarm);
+}

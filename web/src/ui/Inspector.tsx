@@ -7,17 +7,31 @@
  */
 
 import { useRef } from 'react';
+import type { Selection } from '../canvas/tools';
+import { polylineLength } from '../canvas/tools';
+import type { VenueDoc } from '../schema/venue';
 import { occupantLoad, useApp } from '../state/store';
 
 interface Props {
   venueTitle: string;
   /** How many agents were actually placed, which may be fewer than requested. */
   placedAgents: number;
+  selection: Selection | null;
+  document: VenueDoc | null;
+  onDeleteSelection: () => void;
   onLoadFile: (f: File) => void;
   onReset: () => void;
 }
 
-export function Inspector({ venueTitle, placedAgents, onLoadFile, onReset }: Props) {
+export function Inspector({
+  venueTitle,
+  placedAgents,
+  selection,
+  document: doc,
+  onDeleteSelection,
+  onLoadFile,
+  onReset,
+}: Props) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const {
     walkableArea,
@@ -40,6 +54,10 @@ export function Inspector({ venueTitle, placedAgents, onLoadFile, onReset }: Pro
 
   return (
     <section className="panel">
+      {selection && doc && (
+        <SelectionPanel selection={selection} doc={doc} onDelete={onDeleteSelection} />
+      )}
+
       <h2 className="panel-title">Venue</h2>
 
       <div className="rows">
@@ -155,6 +173,94 @@ export function Inspector({ venueTitle, placedAgents, onLoadFile, onReset }: Pro
       <p className="build">{engineVersion}</p>
     </section>
   );
+}
+
+/**
+ * Properties of the selected element.
+ *
+ * Reads as a spec sheet rather than a form: these are measured facts about a
+ * piece of geometry, and the units carry as much meaning as the numbers. Wall
+ * length and door width are the figures egress capacity is computed from, so
+ * they are stated plainly rather than buried in an editor.
+ */
+function SelectionPanel({
+  selection,
+  doc,
+  onDelete,
+}: {
+  selection: Selection;
+  doc: VenueDoc;
+  onDelete: () => void;
+}) {
+  const floor = doc.floors[0];
+  const rows: Array<[string, string, string?]> = [];
+  let title = 'Selection';
+
+  if (floor && selection.kind === 'wall') {
+    const w = (floor.walls ?? []).find((x) => x.id === selection.id);
+    if (w) {
+      title = 'Wall';
+      rows.push(['Length', `${polylineLength(w.polyline).toFixed(2)} m`]);
+      rows.push(['Thickness', `${(w.thicknessM ?? 0.2).toFixed(2)} m`]);
+      rows.push(['Vertices', String(w.polyline.length)]);
+      rows.push(['Kind', w.kind ?? 'structural']);
+      const doors = (floor.openings ?? []).filter((o) => o.wall === w.id).length;
+      if (doors > 0) rows.push(['Openings', String(doors), 'removed with the wall']);
+    }
+  } else if (floor && selection.kind === 'zone') {
+    const z = (floor.zones ?? []).find((x) => x.id === selection.id);
+    if (z) {
+      title = 'Zone';
+      const area = polygonArea(z.polygon);
+      rows.push(['Area', `${area.toFixed(1)} m²`]);
+      rows.push(['Kind', String(z.kind)]);
+      rows.push(['Vertices', String(z.polygon.length)]);
+    }
+  } else if (floor && selection.kind === 'opening') {
+    const o = (floor.openings ?? []).find((x) => x.id === selection.id);
+    if (o) {
+      title = 'Doorway';
+      rows.push(['Clear width', `${o.widthM.toFixed(2)} m`, o.widthM < 0.85 ? 'below minimum' : undefined]);
+      rows.push(['Kind', o.kind ?? 'door']);
+      rows.push(['Fire exit', o.isFireExit ? 'yes' : 'no']);
+      // Green Guide: 82 persons per metre per minute on the level.
+      rows.push([
+        'Rate of passage',
+        `${Math.round(o.widthM * 82)} p/min`,
+        'Green Guide, level',
+      ]);
+    }
+  }
+
+  if (!rows.length) return null;
+
+  return (
+    <>
+      <h2 className="panel-title">
+        {title}
+        <span className="panel-count">{selection.id}</span>
+      </h2>
+      <div className="rows">
+        {rows.map(([label, value, note]) => (
+          <Row key={label} label={label} value={value} note={note} />
+        ))}
+      </div>
+      <div className="actions">
+        <button type="button" className="btn btn-danger" onClick={onDelete}>
+          Delete
+        </button>
+      </div>
+    </>
+  );
+}
+
+/** Shoelace area of a closed ring, m². */
+function polygonArea(poly: number[][]): number {
+  let acc = 0;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    acc += poly[j]![0]! * poly[i]![1]! - poly[i]![0]! * poly[j]![1]!;
+  }
+  return Math.abs(acc) / 2;
 }
 
 /**
