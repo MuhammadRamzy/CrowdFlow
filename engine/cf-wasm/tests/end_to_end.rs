@@ -86,9 +86,12 @@ fn five_hundred_agents_walk_out_of_the_hall() {
     let mut sim = Simulation::new(&v, 0, 20260803.0).expect("simulation builds");
 
     let spawned = sim.spawn_scattered(500);
+    // Placement rejects candidates that would overlap an existing body, so the
+    // fill is high but not complete. Requiring 100% would mean allowing bodies
+    // to start inside one another, which is not a physical initial condition.
     assert!(
-        spawned >= 490,
-        "expected ~500 agents placed on walkable floor, got {spawned}"
+        spawned >= 450,
+        "expected most of 500 agents placed on walkable floor, got {spawned}"
     );
     assert_eq!(sim.active_count(), spawned);
     assert_eq!(sim.exited_count(), 0);
@@ -237,4 +240,51 @@ fn engine_version_is_reported() {
     let v = cf_wasm::engine_version();
     assert!(v.contains("cf-wasm"));
     assert!(v.contains("cf-compile"));
+}
+
+/// A placed crowd must not start with bodies inside one another.
+///
+/// An overlapping initial condition is not physical, and the density field
+/// latches it as a peak before the contact solve gets a tick to separate
+/// anyone — which is how a 20 x 12 hall once reported 26 p/m², roughly five
+/// times the densest packing of human bodies that can exist.
+#[test]
+fn a_placed_crowd_does_not_start_overlapping() {
+    let v = CompiledVenue::from_json(&fixture()).unwrap();
+    let mut sim = Simulation::new(&v, 0, 20260803.0).unwrap();
+    let n = sim.spawn_scattered(500);
+    assert!(
+        n > 200,
+        "only {n} agents placed; separation is too aggressive"
+    );
+
+    let xy = sim.positions();
+    let count = xy.len() / 2;
+    // Bodies are 0.18–0.30 m radius, so the tightest legal separation is 0.36 m.
+    // Allow a small tolerance for the sampled radii.
+    let min_sep = 0.34f32;
+    let mut worst = f32::INFINITY;
+    for i in 0..count {
+        for j in (i + 1)..count {
+            let dx = xy[i * 2] - xy[j * 2];
+            let dy = xy[i * 2 + 1] - xy[j * 2 + 1];
+            let d = (dx * dx + dy * dy).sqrt();
+            if d < worst {
+                worst = d;
+            }
+        }
+    }
+    assert!(
+        worst >= min_sep,
+        "two agents were placed {worst:.3} m apart, closer than two bodies allow"
+    );
+
+    // And the density that results must be physically possible: hexagonal close
+    // packing of 0.23 m bodies is 5.46 p/m², and a centre-biased window reads at
+    // most about 1.5x that.
+    let peak = sim.peak_density();
+    assert!(
+        peak < 8.2,
+        "a freshly placed crowd reports {peak:.2} p/m², which cannot be true"
+    );
 }

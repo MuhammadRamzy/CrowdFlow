@@ -25,6 +25,13 @@ use cf_sim::world::{AgentState, SpawnParams};
 use cf_sim::{ExitSpan, Sim, SimParams};
 use wasm_bindgen::prelude::*;
 
+/// Persons/m² mapped to a density byte of 255.
+///
+/// 8 rather than the 6 p/m² crush threshold, so the critical band occupies the
+/// top quarter of the range and remains visually distinct instead of
+/// saturating the moment a venue becomes dangerous.
+const DENSITY_SCALE: f32 = 8.0;
+
 /// Install a panic hook so a Rust panic surfaces as a readable console error
 /// rather than `RuntimeError: unreachable executed`.
 #[wasm_bindgen(start)]
@@ -251,20 +258,31 @@ impl Simulation {
             return 0;
         };
 
-        // Candidate points: triangle centroids, plus interpolations toward each
-        // vertex so a large crowd spreads out rather than stacking on centroids.
-        let mut spots: Vec<Vec2> = Vec::new();
+        // Sample uniformly over walkable *area*, by picking a triangle in
+        // proportion to its area and then a uniform point inside it.
+        //
+        // An earlier version used triangle centroids plus a few interpolations
+        // as candidate spots. That fails badly on simple geometry: a
+        // rectangular hall triangulates into two triangles, giving eight spawn
+        // points for 240 m² of floor, and only 95 of 500 agents could be
+        // placed. Area-weighted sampling is independent of how the mesh
+        // happens to be cut up.
+        let mut tris: Vec<([Vec2; 3], f64)> = Vec::new();
+        let mut total_area = 0.0;
         for (idx, t) in mesh.tri.live() {
             if !mesh.is_walkable(idx) {
                 continue;
             }
-            let c = mesh.centroids[idx];
-            spots.push(c);
-            for v in t.v {
-                spots.push(c.lerp(mesh.tri.points[v], 0.55));
-            }
+            let p = [
+                mesh.tri.points[t.v[0]],
+                mesh.tri.points[t.v[1]],
+                mesh.tri.points[t.v[2]],
+            ];
+            let area = ((p[1] - p[0]).cross(p[2] - p[0])).abs() * 0.5;
+            total_area += area;
+            tris.push((p, total_area));
         }
-        if spots.is_empty() {
+        if tris.is_empty() || total_area <= 0.0 {
             return 0;
         }
 
@@ -288,25 +306,78 @@ impl Simulation {
         // Plan every placement while the mesh is borrowed, then spawn. Spawning
         // needs `&mut self.sim`, which cannot coexist with the `&mesh` the
         // walkability check reads.
+        //
+        // Placements must not overlap. A crowd that starts with bodies inside
+        // one another is not a physical initial condition, and the density
+        // field latches that artefact as a peak before the contact solve has
+        // had a tick to separate them — which is how a 20 x 12 hall came to
+        // report 26 p/m², five times the densest packing that can exist.
         let mut planned: Vec<(Vec2, f64, f64)> = Vec::with_capacity(count as usize);
+        let mut placed: Vec<Vec2> = Vec::with_capacity(count as usize);
+        // Bucketed by metre so the separation check stays local rather than
+        // quadratic over the whole crowd.
+        let mut buckets: std::collections::HashMap<(i64, i64), Vec<usize>> =
+            std::collections::HashMap::new();
+
         for i in 0..count as u64 {
-            let pick = rng.below(cf_sim::Stream::SpawnPoint, i, 0, spots.len() as u64) as usize;
-            let base = spots[pick];
-            // Jitter so agents sharing a spot do not start exactly coincident.
-            let jx = rng.uniform_range(cf_sim::Stream::SpawnJitter, i, 0, -0.35, 0.35);
-            let jy = rng.uniform_range(cf_sim::Stream::SpawnJitter, i, 1, -0.35, 0.35);
-            let pos = Vec2::new(base.x + jx, base.y + jy);
-            if mesh.locate(pos).is_none() {
-                continue;
+            // A few attempts per agent: enough to fill a hall evenly, bounded
+            // so a venue with no room left terminates instead of spinning.
+            let mut chosen: Option<(Vec2, f64, f64)> = None;
+            for attempt in 0..12u64 {
+                let k = i * 16 + attempt;
+                // Pick a triangle in proportion to its area.
+                let target = rng.uniform01(cf_sim::Stream::SpawnPoint, k, 0) * total_area;
+                let ti = tris
+                    .partition_point(|(_, cum)| *cum < target)
+                    .min(tris.len() - 1);
+                let p = tris[ti].0;
+
+                // Uniform barycentric sample. Folding u+v > 1 back into the
+                // triangle keeps the distribution uniform rather than biased
+                // toward one corner.
+                let mut u = rng.uniform01(cf_sim::Stream::SpawnJitter, k, 0);
+                let mut v = rng.uniform01(cf_sim::Stream::SpawnJitter, k, 1);
+                if u + v > 1.0 {
+                    u = 1.0 - u;
+                    v = 1.0 - v;
+                }
+                let pos = p[0] + (p[1] - p[0]) * u + (p[2] - p[0]) * v;
+
+                let radius = radius_dist.sample_icdf(rng.uniform01(cf_sim::Stream::Radius, i, 0));
+                let cx = pos.x.floor() as i64;
+                let cy = pos.y.floor() as i64;
+                let mut clear = true;
+                'search: for dx in -1..=1 {
+                    for dy in -1..=1 {
+                        let Some(list) = buckets.get(&(cx + dx, cy + dy)) else {
+                            continue;
+                        };
+                        for &j in list {
+                            // Two body radii, plus a little so they start apart
+                            // rather than exactly touching.
+                            if placed[j].distance(pos) < radius * 2.0 + 0.02 {
+                                clear = false;
+                                break 'search;
+                            }
+                        }
+                    }
+                }
+                if !clear {
+                    continue;
+                }
+
+                let speed =
+                    speed_dist.sample_icdf(rng.uniform01(cf_sim::Stream::DesiredSpeed, i, 0));
+                buckets.entry((cx, cy)).or_default().push(placed.len());
+                placed.push(pos);
+                chosen = Some((pos, speed, radius));
+                break;
             }
 
-            // Sampled through cf-schema's Distribution rather than a local
-            // copy: ADR 0002's point is that there is exactly one definition of
-            // what "normal" means, shared by the editor's preview and the
-            // engine. A second implementation here could drift from it.
-            let speed = speed_dist.sample_icdf(rng.uniform01(cf_sim::Stream::DesiredSpeed, i, 0));
-            let radius = radius_dist.sample_icdf(rng.uniform01(cf_sim::Stream::Radius, i, 0));
-            planned.push((pos, speed, radius));
+            let Some(plan) = chosen else { continue };
+            planned.push(plan);
+            let _ = plan;
+            continue;
         }
 
         let mut spawned = 0;
@@ -322,7 +393,61 @@ impl Simulation {
             });
             spawned += 1;
         }
+        // Populate the density field now so a placed crowd is visible before
+        // playback starts.
+        self.sim.refresh_density();
         spawned
+    }
+
+    /// The density field as bytes, one per cell, row-major.
+    ///
+    /// Quantised to `0..=255` over `0..maxDensity` persons/m², because this is
+    /// uploaded as a texture every frame and a `Float32Array` would cost four
+    /// times the bandwidth for precision no display can show. `maxDensity` is
+    /// reported by [`Simulation::density_scale`] so the caller can label the
+    /// legend correctly.
+    #[wasm_bindgen(js_name = densityBytes)]
+    pub fn density_bytes(&mut self, peak: bool) -> Vec<u8> {
+        let g = self.sim.density();
+        let src = if peak { g.peak() } else { g.current() };
+        let scale = DENSITY_SCALE;
+        src.iter()
+            .map(|d| ((d / scale).clamp(0.0, 1.0) * 255.0) as u8)
+            .collect()
+    }
+
+    /// Persons/m² represented by a density byte of 255.
+    #[wasm_bindgen(js_name = densityScale)]
+    pub fn density_scale(&self) -> f32 {
+        DENSITY_SCALE
+    }
+
+    /// Density grid shape as `[cols, rows]`.
+    #[wasm_bindgen(js_name = densityDims)]
+    pub fn density_dims(&self) -> Vec<u32> {
+        let (c, r) = self.sim.density().dims();
+        vec![c as u32, r as u32]
+    }
+
+    /// Grid placement as `[originX, originY, cellSize]`, in metres.
+    #[wasm_bindgen(js_name = densityPlacement)]
+    pub fn density_placement(&self) -> Vec<f32> {
+        let g = self.sim.density();
+        let (ox, oy) = g.origin();
+        vec![ox as f32, oy as f32, g.cell_size() as f32]
+    }
+
+    /// Highest density reached anywhere during the run, persons/m².
+    #[wasm_bindgen(js_name = peakDensity)]
+    pub fn peak_density(&self) -> f32 {
+        self.sim.density().max_peak()
+    }
+
+    /// Floor area, m², that reached or exceeded the crush threshold at any
+    /// point. The figure that answers "how much of my venue became dangerous".
+    #[wasm_bindgen(js_name = criticalArea)]
+    pub fn critical_area(&self) -> f64 {
+        self.sim.density().peak_area_above(cf_sim::BAND_CRITICAL)
     }
 
     /// Advance one physics tick.

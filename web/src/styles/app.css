@@ -520,3 +520,63 @@
     display: none;
   }
 }
+
+/* --- density legend ---------------------------------------------------- */
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  margin: var(--gap-2) 0;
+  color: var(--chalk);
+  font-size: var(--t-small);
+  cursor: pointer;
+}
+
+.check input {
+  accent-color: var(--select);
+  cursor: pointer;
+}
+
+.check:has(input:disabled) {
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+.legend {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  margin: var(--gap-2) 0;
+}
+
+.legend-band {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.legend-swatch {
+  height: 8px;
+  border-radius: 1px;
+}
+
+.legend-label {
+  font-size: var(--t-micro);
+  color: var(--muted);
+  text-align: center;
+}
+
+.legend-unit {
+  font-size: var(--t-micro);
+  color: var(--faint);
+  padding-left: var(--gap-1);
+}
+
+.hint {
+  color: var(--muted);
+  font-size: var(--t-micro);
+  line-height: 1.5;
+  margin: var(--gap-1) 0 var(--gap-2);
+}

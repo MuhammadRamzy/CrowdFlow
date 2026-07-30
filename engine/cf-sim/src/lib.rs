@@ -28,9 +28,11 @@
 //! - [`spatial`] — uniform grid for neighbour queries. **Done.**
 //! - [`world`] — Structure-of-Arrays agent storage. **Done.**
 //! - [`locomotion`] — Social Force Model + position-based contacts. **Done.**
+//! - [`density`] — smoothed crowd-density field. **Done.**
 //! - [`sim`] — fixed-timestep step loop, routing and exits. **Done.**
 //! - Flow fields, queues, groups, evacuation mode — next.
 
+pub mod density;
 pub mod fmath;
 pub mod locomotion;
 pub mod rng;
@@ -38,6 +40,7 @@ pub mod sim;
 pub mod spatial;
 pub mod world;
 
+pub use density::{DensityGrid, BAND_COMFORTABLE, BAND_CRITICAL, BAND_RESTRICTED};
 pub use locomotion::{LocomotionParams, LocomotionScratch};
 pub use rng::{Rng, Stream};
 pub use sim::{ExitSpan, Sim, SimParams, SimStats};

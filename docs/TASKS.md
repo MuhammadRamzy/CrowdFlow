@@ -84,7 +84,8 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [ ] Runtime event injection + incremental flow-field invalidation
 
 ### B5 — Analytics + compliance (W21–W28)
-- [ ] Density grid (Gaussian-smoothed), velocity field, dwell map
+- [x] Density grid (disc-window, physically validated)
+- [ ] Velocity field, dwell map
 - [ ] Cohort trajectory sampling
 - [ ] Event log
 - [ ] Bottleneck detection + ranking
@@ -113,7 +114,7 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [x] F5 Agent rendering + transport controls — **M1 demo runs in browser**
 - [x] F6 Life-safety status bar with latched peak occupancy
 - [ ] F7 Wall/zone drawing tools + command undo stack
-- [ ] F8 Density heatmap overlay
+- [x] F8 Density heatmap overlay with banded legend
 
 ### A1 — Canvas core (W3–W8)
 - [x] Vite + React + TS scaffold

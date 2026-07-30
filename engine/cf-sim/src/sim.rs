@@ -27,6 +27,7 @@
 //! 100k agents is feasible at all. Per-agent paths are fine at M1 scale and
 //! let the locomotion model be exercised against real geometry now.
 
+use crate::density::DensityGrid;
 use crate::locomotion::{self, LocomotionParams, LocomotionScratch};
 use crate::rng::Rng;
 use crate::spatial::SpatialGrid;
@@ -124,6 +125,11 @@ pub struct Sim {
     routes: Vec<Route>,
     /// Diagnostics from the most recent tick only.
     last_solve: SolveDiagnostics,
+    density: DensityGrid,
+    /// Ticks between density recomputations. The field changes far slower than
+    /// agents move, and recomputing it every tick would dominate the loop for a
+    /// picture nobody can read at 20 Hz.
+    density_interval: u64,
 }
 
 /// Per-tick solver health, which cannot be derived from world state.
@@ -149,6 +155,8 @@ impl Sim {
             exits: Vec::new(),
             routes: Vec::new(),
             last_solve: SolveDiagnostics::default(),
+            density: DensityGrid::new(bounds, 0.5),
+            density_interval: 4,
         }
     }
 
@@ -185,7 +193,15 @@ impl Sim {
             exits,
             routes: Vec::new(),
             last_solve: SolveDiagnostics::default(),
+            density: DensityGrid::new(bounds, 0.5),
+            density_interval: 4,
         }
+    }
+
+    /// The crowd-density field. Recomputed every few ticks; see
+    /// `density_interval`.
+    pub fn density(&self) -> &DensityGrid {
+        &self.density
     }
 
     pub fn mesh(&self) -> Option<&NavMesh> {
@@ -235,6 +251,15 @@ impl Sim {
         debug_assert_eq!(self.routes.len(), id as usize);
         self.routes.push(route);
         id
+    }
+
+    /// Recompute the density field now, without stepping.
+    ///
+    /// Called after spawning so a placed crowd is visible before the first
+    /// tick — otherwise the heatmap is blank until playback starts, which
+    /// reads as a broken feature rather than an empty one.
+    pub fn refresh_density(&mut self) {
+        self.density.accumulate(&self.world);
     }
 
     /// Spawn an agent routed to whichever exit is nearest by walkable distance.
@@ -365,6 +390,10 @@ impl Sim {
         // read off these values.
         self.world.tick += 1;
         self.world.time = self.world.tick as f64 * self.params.dt;
+
+        if self.world.tick % self.density_interval == 0 {
+            self.density.accumulate(&self.world);
+        }
 
         self.last_solve = SolveDiagnostics {
             max_overlap: max_overlap.max(wall_pen),

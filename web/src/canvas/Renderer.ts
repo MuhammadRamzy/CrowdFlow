@@ -10,8 +10,16 @@
  * and rebuilt only when the venue changes, not per frame.
  */
 
-import { Application, Container, Graphics, Particle, ParticleContainer, Texture } from 'pixi.js';
-import type { VenueGeometry } from '../engine/bridge';
+import {
+  Application,
+  Container,
+  Graphics,
+  Particle,
+  ParticleContainer,
+  Sprite,
+  Texture,
+} from 'pixi.js';
+import type { DensityField, VenueGeometry } from '../engine/bridge';
 import { AgentState } from '../engine/bridge';
 
 /** Reads the palette from CSS so tokens.css stays the single source of colour. */
@@ -36,6 +44,10 @@ export class Renderer {
   private floorLayer = new Graphics();
   private wallLayer = new Graphics();
   private doorLayer = new Graphics();
+  private heatLayer = new Container();
+  private heatSprite: Sprite | null = null;
+  private heatCanvas: HTMLCanvasElement | null = null;
+  private ramp: Uint8Array | null = null;
   private agents!: ParticleContainer;
   private particles: Particle[] = [];
   private dot!: Texture;
@@ -78,7 +90,17 @@ export class Renderer {
       dynamicProperties: { position: true, tint: true, scale: false, rotation: false },
     });
 
-    this.world.addChild(this.gridLayer, this.floorLayer, this.wallLayer, this.doorLayer, this.agents);
+    this.buildRamp();
+    // Heat sits above the floor but below walls and agents: a heatmap that
+    // covered the walls would hide the geometry causing the congestion.
+    this.world.addChild(
+      this.gridLayer,
+      this.floorLayer,
+      this.heatLayer,
+      this.wallLayer,
+      this.doorLayer,
+      this.agents,
+    );
     this.app.stage.addChild(this.world);
 
     this.installInput(host);
@@ -87,6 +109,90 @@ export class Renderer {
 
   destroy(): void {
     this.app?.destroy(true, { children: true });
+  }
+
+  /**
+   * Build the density colour ramp once, as a 256-entry RGBA lookup.
+   *
+   * The stops are the crowd-science bands, not an aesthetic gradient: the
+   * colour changes where the *meaning* changes, so a reader can tell 4 p/m²
+   * from 6 p/m² without consulting a legend. Alpha rises with density too, so
+   * empty floor stays legible underneath.
+   */
+  private buildRamp(): void {
+    const stops: Array<{ at: number; c: [number, number, number] }> = [
+      { at: 0.0, c: [27, 58, 92] },    // < 1   free flow
+      { at: 1.0, c: [46, 125, 154] },  // 1-2   comfortable
+      { at: 2.0, c: [70, 176, 138] },  // 2-3   steady
+      { at: 4.0, c: [196, 192, 74] },  // 3-4   restricted
+      { at: 6.0, c: [224, 138, 60] },  // 4-6   dense
+      { at: 8.0, c: [212, 63, 63] },   // 6+    critical
+    ];
+    const scale = 8; // must match DENSITY_SCALE in cf-wasm
+    const ramp = new Uint8Array(256 * 4);
+    for (let i = 0; i < 256; i++) {
+      const d = (i / 255) * scale;
+      let lo = stops[0]!;
+      let hi = stops[stops.length - 1]!;
+      for (let k = 0; k < stops.length - 1; k++) {
+        if (d >= stops[k]!.at && d <= stops[k + 1]!.at) {
+          lo = stops[k]!;
+          hi = stops[k + 1]!;
+          break;
+        }
+      }
+      const span = hi.at - lo.at || 1;
+      const t = Math.min(1, Math.max(0, (d - lo.at) / span));
+      ramp[i * 4 + 0] = Math.round(lo.c[0] + (hi.c[0] - lo.c[0]) * t);
+      ramp[i * 4 + 1] = Math.round(lo.c[1] + (hi.c[1] - lo.c[1]) * t);
+      ramp[i * 4 + 2] = Math.round(lo.c[2] + (hi.c[2] - lo.c[2]) * t);
+      // Fade in from nothing so an empty venue shows bare floor, not a wash of
+      // blue that reads as "occupied".
+      ramp[i * 4 + 3] = Math.round(Math.min(1, (i / 255) * 3.2) * 210);
+    }
+    this.ramp = ramp;
+  }
+
+  /** Upload a density field, or hide the overlay when `field` is null. */
+  setDensity(field: DensityField | null): void {
+    if (!field || !this.ramp) {
+      if (this.heatSprite) this.heatSprite.visible = false;
+      return;
+    }
+
+    const { cols, rows, bytes } = field;
+    if (!this.heatCanvas || this.heatCanvas.width !== cols || this.heatCanvas.height !== rows) {
+      this.heatCanvas = document.createElement('canvas');
+      this.heatCanvas.width = cols;
+      this.heatCanvas.height = rows;
+      this.heatSprite?.destroy();
+      this.heatSprite = new Sprite(Texture.from(this.heatCanvas));
+      this.heatLayer.removeChildren();
+      this.heatLayer.addChild(this.heatSprite);
+    }
+
+    const ctx = this.heatCanvas.getContext('2d');
+    if (!ctx) return;
+    const img = ctx.createImageData(cols, rows);
+    for (let i = 0; i < bytes.length; i++) {
+      const v = bytes[i]! * 4;
+      const o = i * 4;
+      img.data[o] = this.ramp[v]!;
+      img.data[o + 1] = this.ramp[v + 1]!;
+      img.data[o + 2] = this.ramp[v + 2]!;
+      img.data[o + 3] = this.ramp[v + 3]!;
+    }
+    ctx.putImageData(img, 0, 0);
+    this.heatSprite!.texture.source.update();
+
+    // The grid is row-major from its origin upward, but screen y runs down, so
+    // the sprite is flipped rather than the data — flipping the data would cost
+    // a copy every frame.
+    const s = this.heatSprite!;
+    s.visible = true;
+    s.width = cols * field.cell;
+    s.height = -rows * field.cell;
+    s.position.set(field.originX, -field.originY);
   }
 
   /** Replace the venue geometry and fit it to the viewport. */

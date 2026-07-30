@@ -52,6 +52,14 @@ export interface AppState {
    * resolved itself.
    */
   peakOccupancy: number;
+  /** Whether the density overlay is drawn. */
+  showHeatmap: boolean;
+  /** `peak` shows the worst each cell reached; otherwise the current tick. */
+  heatmapPeak: boolean;
+  /** Highest density reached anywhere, persons/m². */
+  peakDensity: number;
+  /** Floor area, m², that reached the crush threshold at any point. */
+  criticalArea: number;
 
   thresholds: Thresholds;
 
@@ -63,6 +71,9 @@ export interface AppState {
   setRequestedAgents: (n: number) => void;
   setStats: (s: SimStats | null) => void;
   resetPeak: () => void;
+  setShowHeatmap: (v: boolean) => void;
+  setHeatmapPeak: (v: boolean) => void;
+  setDensityFindings: (peakDensity: number, criticalArea: number) => void;
   setEgressTime: (t: number | null) => void;
 }
 
@@ -82,6 +93,10 @@ export const useApp = create<AppState>((set) => ({
   stats: null,
   egressTime: null,
   peakOccupancy: 0,
+  showHeatmap: true,
+  heatmapPeak: false,
+  peakDensity: 0,
+  criticalArea: 0,
 
   thresholds: {
     // NFPA 101 Table 7.3.1.2, concentrated assembly without fixed seating.
@@ -107,7 +122,10 @@ export const useApp = create<AppState>((set) => ({
       stats,
       peakOccupancy: stats ? Math.max(prev.peakOccupancy, stats.active) : prev.peakOccupancy,
     })),
-  resetPeak: () => set({ peakOccupancy: 0 }),
+  resetPeak: () => set({ peakOccupancy: 0, peakDensity: 0, criticalArea: 0 }),
+  setShowHeatmap: (showHeatmap) => set({ showHeatmap }),
+  setHeatmapPeak: (heatmapPeak) => set({ heatmapPeak }),
+  setDensityFindings: (peakDensity, criticalArea) => set({ peakDensity, criticalArea }),
   setEgressTime: (egressTime) => set({ egressTime }),
 }));
 

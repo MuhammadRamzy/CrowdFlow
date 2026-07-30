@@ -33,6 +33,7 @@ export function App() {
   // A ref change does not re-render, so whether a run exists must live in
   // state — otherwise Play stays disabled after agents are placed.
   const [hasRun, setHasRun] = useState(false);
+  const [placedAgents, setPlacedAgents] = useState(0);
 
   const {
     phase,
@@ -47,6 +48,9 @@ export function App() {
     setStats,
     setEgressTime,
     resetPeak,
+    showHeatmap,
+    heatmapPeak,
+    setDensityFindings,
   } = useApp();
 
   /** Compile a venue document and hand its geometry to the canvas. */
@@ -72,6 +76,7 @@ export function App() {
       setRunning(false);
       rendererRef.current?.setVenue(venue.geometry);
       rendererRef.current?.clearAgents();
+      rendererRef.current?.setDensity(null);
     },
     [setVenue, setStats, setEgressTime, setRunning, resetPeak],
   );
@@ -114,7 +119,10 @@ export function App() {
 
     runRef.current?.free();
     const run = venue.simulate(Date.now() % 1_000_000);
-    run.spawn(requestedAgents);
+    // Placement rejects candidates that would overlap an existing body, so
+    // fewer agents may be placed than requested. Report what was actually
+    // placed rather than what was asked for.
+    setPlacedAgents(run.spawn(requestedAgents));
     runRef.current = run;
     setHasRun(true);
 
@@ -122,7 +130,8 @@ export function App() {
     setStats(run.stats());
     setEgressTime(null);
     rendererRef.current?.setAgents(run.positions(), run.states());
-  }, [requestedAgents, setStats, setEgressTime, resetPeak]);
+    rendererRef.current?.setDensity(showHeatmap ? run.density(heatmapPeak) : null);
+  }, [requestedAgents, showHeatmap, heatmapPeak, setStats, setEgressTime, resetPeak]);
 
   // The playback clock. Fixed timestep with an accumulator: the engine always
   // advances by exactly 50 ms, whatever the frame rate, so a slow frame changes
@@ -155,16 +164,19 @@ export function App() {
 
       renderer.setAgents(run.positions(), run.states());
 
-      // Chrome updates at ~4 Hz. Numbers a human reads do not need 60.
+      // Chrome and the heatmap update at ~4 Hz. The density field changes far
+      // slower than agents move, and neither is read at 60 Hz by a human.
       if (now - uiClockRef.current > 250) {
         uiClockRef.current = now;
         setStats(run.stats());
+        renderer.setDensity(showHeatmap ? run.density(heatmapPeak) : null);
+        setDensityFindings(run.peakDensity, run.criticalArea);
       }
     };
 
     rafRef.current = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [running, speed, setStats, setEgressTime, setRunning]);
+  }, [running, speed, setStats, setEgressTime, setRunning, showHeatmap, heatmapPeak, setDensityFindings]);
 
   const onLoadFile = useCallback(
     async (file: File) => {
@@ -208,7 +220,12 @@ export function App() {
         </div>
 
         <aside className="inspector" aria-label="Inspector">
-          <Inspector venueTitle={venueTitle} onLoadFile={onLoadFile} onReset={reset} />
+          <Inspector
+            venueTitle={venueTitle}
+            placedAgents={placedAgents}
+            onLoadFile={onLoadFile}
+            onReset={reset}
+          />
           <Validation />
         </aside>
       </main>

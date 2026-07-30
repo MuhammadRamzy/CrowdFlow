@@ -11,11 +11,13 @@ import { occupantLoad, useApp } from '../state/store';
 
 interface Props {
   venueTitle: string;
+  /** How many agents were actually placed, which may be fewer than requested. */
+  placedAgents: number;
   onLoadFile: (f: File) => void;
   onReset: () => void;
 }
 
-export function Inspector({ venueTitle, onLoadFile, onReset }: Props) {
+export function Inspector({ venueTitle, placedAgents, onLoadFile, onReset }: Props) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const {
     walkableArea,
@@ -25,6 +27,12 @@ export function Inspector({ venueTitle, onLoadFile, onReset }: Props) {
     setRequestedAgents,
     thresholds,
     engineVersion,
+    showHeatmap,
+    setShowHeatmap,
+    heatmapPeak,
+    setHeatmapPeak,
+    peakDensity,
+    criticalArea,
   } = useApp();
 
   const limit = occupantLoad(walkableArea, thresholds.occupantLoadFactorM2);
@@ -83,6 +91,51 @@ export function Inspector({ venueTitle, onLoadFile, onReset }: Props) {
         </button>
       </div>
 
+      {placedAgents > 0 && placedAgents < requestedAgents && (
+        <p className="hint">
+          Placed {placedAgents.toLocaleString()} of {requestedAgents.toLocaleString()}. The rest
+          would have overlapped a body already on the floor.
+        </p>
+      )}
+
+      <h2 className="panel-title">Density</h2>
+
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={showHeatmap}
+          onChange={(e) => setShowHeatmap(e.target.checked)}
+        />
+        <span>Show heatmap</span>
+      </label>
+
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={heatmapPeak}
+          onChange={(e) => setHeatmapPeak(e.target.checked)}
+          disabled={!showHeatmap}
+        />
+        <span>Worst reached, not current</span>
+      </label>
+
+      <Legend />
+
+      {peakDensity > 0 && (
+        <div className="rows">
+          <Row
+            label="Peak density"
+            value={`${peakDensity.toFixed(2)} p/m²`}
+            note={peakDensity >= thresholds.criticalDensity ? 'above crush threshold' : undefined}
+          />
+          <Row
+            label="Critical area"
+            value={`${criticalArea.toFixed(1)} m²`}
+            note={`at or above ${thresholds.criticalDensity} p/m²`}
+          />
+        </div>
+      )}
+
       {stats && (
         <div className="rows">
           <Row label="In venue" value={stats.active.toLocaleString()} />
@@ -101,6 +154,34 @@ export function Inspector({ venueTitle, onLoadFile, onReset }: Props) {
 
       <p className="build">{engineVersion}</p>
     </section>
+  );
+}
+
+/**
+ * The density bands, labelled.
+ *
+ * The colours are meaningless without the thresholds beside them: 6 p/m² is
+ * where forward movement ceases, and a reader must be able to tell that band
+ * from the one below it at a glance.
+ */
+function Legend() {
+  const bands: Array<[string, string]> = [
+    ['#2e7d9a', '0–2'],
+    ['#46b08a', '2–3'],
+    ['#c4c04a', '3–4'],
+    ['#e08a3c', '4–6'],
+    ['#d43f3f', '6+'],
+  ];
+  return (
+    <div className="legend" aria-label="Density bands, persons per square metre">
+      {bands.map(([colour, label]) => (
+        <div className="legend-band" key={label}>
+          <span className="legend-swatch" style={{ background: colour }} aria-hidden="true" />
+          <span className="legend-label">{label}</span>
+        </div>
+      ))}
+      <span className="legend-unit">p/m²</span>
+    </div>
   );
 }
 
