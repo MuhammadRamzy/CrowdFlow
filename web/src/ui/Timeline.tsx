@@ -7,6 +7,7 @@
  */
 
 import { formatClock, useApp } from '../state/store';
+import { IconPause, IconPlay, IconReset } from './Icon';
 
 const SPEEDS = [0.5, 1, 2, 4, 8, 16];
 
@@ -25,7 +26,7 @@ export function Timeline({ onReset, hasRun }: { onReset: () => void; hasRun: boo
           aria-label={running ? 'Pause' : 'Play'}
           title={running ? 'Pause' : 'Play'}
         >
-          {running ? '❙❙' : '▶'}
+          {running ? <IconPause size={14} /> : <IconPlay size={14} />}
         </button>
         <button
           type="button"
@@ -35,7 +36,7 @@ export function Timeline({ onReset, hasRun }: { onReset: () => void; hasRun: boo
           aria-label="Reset"
           title="Reset"
         >
-          ↺
+          <IconReset size={14} />
         </button>
       </div>
 

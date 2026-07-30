@@ -9,6 +9,7 @@
 import { useRef } from 'react';
 import type { Selection } from '../canvas/tools';
 import { polylineLength } from '../canvas/tools';
+import { IconAgents, IconDelete, IconOpen } from './Icon';
 import type { VenueDoc, ZoneKind } from '../schema/venue';
 import type { Command } from '../doc/commands';
 import {
@@ -98,7 +99,8 @@ export function Inspector({
           }}
         />
         <button type="button" className="btn" onClick={() => fileRef.current?.click()}>
-          Open venue…
+          <IconOpen size={14} />
+          Open venue
         </button>
       </div>
 
@@ -119,6 +121,7 @@ export function Inspector({
 
       <div className="actions">
         <button type="button" className="btn btn-primary" onClick={onReset} disabled={!simulable}>
+          <IconAgents size={14} />
           Place agents
         </button>
       </div>
@@ -365,6 +368,7 @@ function Panel({
       {children}
       <div className="actions">
         <button type="button" className="btn btn-danger" onClick={onDelete}>
+          <IconDelete size={14} />
           Delete
         </button>
       </div>

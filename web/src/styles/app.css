@@ -86,8 +86,8 @@
 }
 
 .sb-glyph {
-  font-size: var(--t-mid);
-  line-height: 1;
+  display: inline-flex;
+  line-height: 0;
 }
 
 .sb-state {
@@ -99,6 +99,12 @@
 /* Only alarm pulses. If everything moved, nothing would read as urgent. */
 .statusbar.state-alarm .sb-glyph {
   animation: pulse 1.6s var(--ease) infinite;
+}
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 @keyframes pulse {
@@ -177,6 +183,15 @@
   flex: 1;
 }
 
+/* A hairline between tool groups, the way a control panel separates functions
+   that do different jobs. */
+.rail-rule {
+  width: 18px;
+  height: 1px;
+  margin: var(--gap-1) 0;
+  background: var(--line);
+}
+
 .rail-btn {
   width: 30px;
   height: 30px;
@@ -187,7 +202,6 @@
   border-radius: var(--r-md);
   color: var(--muted);
   cursor: pointer;
-  font-size: var(--t-mid);
   transition: color 120ms var(--ease), background 120ms var(--ease);
 }
 
@@ -332,6 +346,10 @@
 
 .btn {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-2);
   padding: var(--gap-2);
   background: var(--raised);
   border: 1px solid var(--line-strong);

@@ -63,6 +63,7 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [x] Seeded PRNG with per-system streams (counter-based, order-independent)
 - [ ] RiMEA component tests (walking speed, stairs, corner, speed distribution, door flow)
 - [ ] Fundamental diagram harness vs Weidmann envelope
+- [ ] **Calibrate locomotion: model achieves ~111 p/m/min specific flow vs Green Guide's 82 — egress times are currently optimistic**
 - [ ] Determinism gate G2 in CI (x86-64 / aarch64 / wasm32)
 
 ### B3 — WASM host (W12–W17)

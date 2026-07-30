@@ -12,11 +12,20 @@
 
 import { formatClock, occupantLoad, safetyVerdict, useApp } from '../state/store';
 import type { SafetyState } from '../state/store';
+import { IconAlarm, IconNormal, IconSupervise } from './Icon';
 
-const GLYPH: Record<SafetyState, string> = {
-  normal: '●',
-  supervise: '▲',
-  alarm: '■',
+/**
+ * The annunciator marks.
+ *
+ * Circle, triangle and square — distinguishable by *shape*, not only colour,
+ * so the panel stays readable to a colour-blind reader and survives being
+ * printed in monochrome. That is the convention real life-safety panels use
+ * and the reason they use it.
+ */
+const GLYPH: Record<SafetyState, React.ReactNode> = {
+  normal: <IconNormal size={12} />,
+  supervise: <IconSupervise size={12} />,
+  alarm: <IconAlarm size={12} />,
 };
 
 const LABEL: Record<SafetyState, string> = {

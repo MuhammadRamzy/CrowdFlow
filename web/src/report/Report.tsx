@@ -20,6 +20,7 @@
  * value has not been produced, the report says so rather than estimating.
  */
 
+import { Fragment } from 'react';
 import type { CompileWarning, SimStats } from '../engine/bridge';
 import { formatClock, occupantLoad } from '../state/store';
 import type { Thresholds } from '../state/store';
@@ -43,6 +44,8 @@ export interface ReportData {
   engineVersion: string;
   /** Data URL of the venue drawing. */
   plan: string | null;
+  /** Data URL of the peak-density heatmap, if a run produced one. */
+  heatmap: string | null;
   generatedAt: Date;
 }
 
@@ -52,6 +55,15 @@ interface Finding {
   status: 'pass' | 'fail' | 'unknown';
   requirement: string;
   measured: string;
+  /**
+   * The calculation, written out.
+   *
+   * An authority reviewing a submission checks the arithmetic. Stating only
+   * the result asks them to trust the tool; stating the working lets them
+   * verify it in the margin, which is the difference between a report that
+   * gets accepted and one that gets questioned.
+   */
+  working?: string;
   remediation?: string;
 }
 
@@ -78,6 +90,9 @@ function evaluate(d: ReportData): Finding[] {
       status: pass ? 'pass' : 'fail',
       requirement: `Maximum ${limit.toLocaleString()} persons at ${d.thresholds.occupantLoadFactorM2} m² per person`,
       measured: `Peak ${d.peakOccupancy.toLocaleString()} persons`,
+      working:
+        `${d.walkableArea.toFixed(1)} m² ÷ ${d.thresholds.occupantLoadFactorM2} m²/person = ` +
+        `${limit.toLocaleString()} persons permitted`,
       remediation: pass
         ? undefined
         : `Reduce permitted occupancy to ${limit.toLocaleString()}, or increase net floor area by ` +
@@ -94,6 +109,9 @@ function evaluate(d: ReportData): Finding[] {
       status: pass ? 'pass' : 'fail',
       requirement: `Clearance within ${formatClock(d.thresholds.targetEgressS)}`,
       measured: `Cleared in ${formatClock(d.egressTime)}`,
+      working:
+        `Last agent left at t = ${d.egressTime.toFixed(1)} s ` +
+        `(${(d.egressTime / d.thresholds.targetEgressS * 100).toFixed(0)}% of the benchmark)`,
       remediation: pass
         ? undefined
         : 'Increase total exit width or add an additional exit; see exit capacity below.',
@@ -115,6 +133,9 @@ function evaluate(d: ReportData): Finding[] {
       measured:
         `${totalWidth.toFixed(2)} m total clear width across ${exits.length} ` +
         `${exits.length === 1 ? 'exit' : 'exits'} — ${capacity.toLocaleString()} persons`,
+      working:
+        `${totalWidth.toFixed(2)} m × ${GREEN_GUIDE_LEVEL} persons/m/min × ` +
+        `${minutes.toFixed(0)} min = ${capacity.toLocaleString()} persons`,
       remediation: pass
         ? undefined
         : `Provide at least ${needed.toFixed(2)} m of clear exit width, an increase of ` +
@@ -162,6 +183,9 @@ function evaluate(d: ReportData): Finding[] {
       measured:
         `Peak ${d.peakDensity.toFixed(2)} persons/m²` +
         (d.criticalArea > 0 ? `, ${d.criticalArea.toFixed(1)} m² at or above threshold` : ''),
+      working:
+        `Measured over a 1 m² window; ${d.thresholds.criticalDensity} persons/m² is the ` +
+        'density at which forward movement ceases',
       remediation: pass
         ? undefined
         : 'Widen the constriction causing the build-up, or stagger arrivals to reduce peak demand.',
@@ -275,8 +299,96 @@ export function Report(props: { data: ReportData; onClose: () => void }) {
           </table>
         </section>
 
+        {ran && (
+          <section>
+            <h2>2 · Simulation results</h2>
+            <table className="spec">
+              <tbody>
+                <tr>
+                  <th>Agents placed</th>
+                  <td>
+                    {d.stats!.spawned.toLocaleString()} on {d.walkableArea.toFixed(1)} m² —{' '}
+                    {(d.stats!.spawned / d.walkableArea).toFixed(2)} persons/m² mean initial
+                    density
+                  </td>
+                </tr>
+                <tr>
+                  <th>Cleared</th>
+                  <td>
+                    {d.stats!.exited.toLocaleString()} of {d.stats!.spawned.toLocaleString()}
+                    {d.stats!.active > 0 && ` — ${d.stats!.active.toLocaleString()} still inside`}
+                  </td>
+                </tr>
+                <tr>
+                  <th>Clearance time</th>
+                  <td>
+                    {d.egressTime !== null
+                      ? `${formatClock(d.egressTime)} (${d.egressTime.toFixed(1)} s)`
+                      : 'run did not complete'}
+                  </td>
+                </tr>
+                {d.egressTime !== null && d.stats!.exited > 0 && (
+                  <tr className={specificFlow(d) > GREEN_GUIDE_LEVEL ? 'is-caution' : undefined}>
+                    <th>Mean flow achieved</th>
+                    <td>
+                      {d.stats!.exited.toLocaleString()} persons ÷ {(d.egressTime / 60).toFixed(2)}{' '}
+                      min = {(d.stats!.exited / (d.egressTime / 60)).toFixed(0)} persons/min
+                      {exitWidth(d) > 0 && (
+                        <>
+                          {' — '}
+                          {specificFlow(d).toFixed(0)} persons/m/min against the Green Guide&rsquo;s{' '}
+                          {GREEN_GUIDE_LEVEL}
+                          {specificFlow(d) > GREEN_GUIDE_LEVEL && (
+                            <span className="caution">
+                              {' '}
+                              The model exceeded the published rate of passage by{' '}
+                              {((specificFlow(d) / GREEN_GUIDE_LEVEL - 1) * 100).toFixed(0)}%, so
+                              this clearance time is optimistic. The locomotion parameters have not
+                              yet been calibrated against measured pedestrian flow; treat the
+                              figure as indicative and not as evidence of compliance.
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                )}
+                <tr>
+                  <th>Peak density</th>
+                  <td>
+                    {d.peakDensity.toFixed(2)} persons/m²
+                    {d.criticalArea > 0
+                      ? ` — ${d.criticalArea.toFixed(1)} m² reached the ${d.thresholds.criticalDensity} persons/m² crush threshold`
+                      : ` — no area reached the ${d.thresholds.criticalDensity} persons/m² crush threshold`}
+                  </td>
+                </tr>
+                <tr>
+                  <th>Model health</th>
+                  <td>
+                    Residual body overlap {d.stats!.maxOverlap.toFixed(4)} m
+                    {d.stats!.escaped > 0
+                      ? `; ${d.stats!.escaped} agent(s) recovered from outside the mesh — results should be treated with caution`
+                      : '; no agents left the navigable region'}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            {d.heatmap && (
+              <figure className="plan">
+                <img src={d.heatmap} alt="Peak crowd density" />
+                <figcaption>
+                  Figure 2 — Peak crowd density, showing the highest value each location
+                  reached at any point during the run. Bands at 2, 4 and 6 persons/m²;
+                  6 persons/m² is the density at which forward movement ceases.
+                </figcaption>
+              </figure>
+            )}
+          </section>
+        )}
+
         <section>
-          <h2>2 · Findings</h2>
+          <h2>{ran ? '3' : '2'} · Findings</h2>
           {findings.length === 0 ? (
             <p className="muted">
               No findings. Run a simulation to assess occupancy, egress time and density.
@@ -293,14 +405,22 @@ export function Report(props: { data: ReportData; onClose: () => void }) {
               </thead>
               <tbody>
                 {findings.map((f) => (
-                  <tr key={f.id} className={f.status === 'fail' ? 'is-fail' : undefined}>
-                    <td>
-                      <span className="finding-clause">{f.clause}</span>
-                    </td>
-                    <td>{f.requirement}</td>
-                    <td>{f.measured}</td>
-                    <td className="result">{f.status === 'pass' ? 'Pass' : 'Fail'}</td>
-                  </tr>
+                  <Fragment key={f.id}>
+                    <tr className={f.status === 'fail' ? 'is-fail' : undefined}>
+                      <td>
+                        <span className="finding-clause">{f.clause}</span>
+                      </td>
+                      <td>{f.requirement}</td>
+                      <td>{f.measured}</td>
+                      <td className="result">{f.status === 'pass' ? 'Pass' : 'Fail'}</td>
+                    </tr>
+                    {f.working && (
+                      <tr className={`working${f.status === 'fail' ? ' is-fail' : ''}`}>
+                        <td />
+                        <td colSpan={3}>{f.working}</td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -309,7 +429,7 @@ export function Report(props: { data: ReportData; onClose: () => void }) {
 
         {failures.length > 0 && (
           <section>
-            <h2>3 · Recommendations</h2>
+            <h2>{ran ? '4' : '3'} · Recommendations</h2>
             <ol className="recommendations">
               {failures.map((f) => (
                 <li key={f.id}>
@@ -322,7 +442,7 @@ export function Report(props: { data: ReportData; onClose: () => void }) {
 
         {d.warnings.length > 0 && (
           <section>
-            <h2>{failures.length > 0 ? '4' : '3'} · Model diagnostics</h2>
+            <h2>{sectionNo(ran, failures.length > 0)} · Model diagnostics</h2>
             <p className="muted">
               Issues raised by the geometry compiler. Fatal entries prevent simulation and
               invalidate any result above.
@@ -357,10 +477,40 @@ export function Report(props: { data: ReportData; onClose: () => void }) {
             distribution across repeated runs rather than a single value. Model assumptions and
             input parameters are listed in section 1.
           </p>
+          <p>
+            <strong>This engine has not yet completed verification.</strong> The RiMEA test suite
+            and validation against measured pedestrian flow data are outstanding, so no figure in
+            this document should be relied upon for a statutory submission.
+          </p>
         </footer>
       </article>
     </div>
   );
+}
+
+/**
+ * Specific flow achieved through the exits, persons per metre per minute.
+ *
+ * Compared against the Green Guide's 82. A model that beats the published rate
+ * is flowing people faster than measurement supports, which makes its egress
+ * time optimistic — the direction that matters, because an optimistic egress
+ * time is one a venue could be approved on and fail to achieve.
+ */
+function specificFlow(d: ReportData): number {
+  const width = exitWidth(d);
+  if (!d.egressTime || width <= 0 || !d.stats) return 0;
+  return d.stats.exited / (d.egressTime / 60) / width;
+}
+
+/** Total clear width of the marked fire exits, metres. */
+function exitWidth(d: ReportData): number {
+  const doors = d.document?.floors[0]?.openings ?? [];
+  return doors.filter((o) => o.isFireExit).reduce((sum, o) => sum + o.widthM, 0);
+}
+
+/** Diagnostics land after results, findings and any recommendations. */
+function sectionNo(ran: boolean, hasRecommendations: boolean): number {
+  return 2 + (ran ? 1 : 0) + (hasRecommendations ? 1 : 0);
 }
 
 function Metric({ label, value, note }: { label: string; value: string; note?: string }) {

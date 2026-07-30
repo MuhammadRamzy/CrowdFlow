@@ -27,6 +27,16 @@ import { StatusBar } from './StatusBar';
 import { Timeline } from './Timeline';
 import { Validation } from './Validation';
 import { Report } from '../report/Report';
+import {
+  IconDoor,
+  IconFit,
+  IconRedo,
+  IconReport,
+  IconSelect,
+  IconUndo,
+  IconWall,
+  IconZone,
+} from './Icon';
 import type { ReportData } from '../report/Report';
 import fixtureJson from '../../../fixtures/unit/hall-two-doors.venue.json?raw';
 
@@ -441,7 +451,20 @@ export function App() {
     const st = useApp.getState();
     // Snapshot the canvas as it stands: the drawing in the report is the venue
     // that was analysed, at the zoom the reviewer left it.
-    const plan = (await rendererRef.current?.snapshot()) ?? null;
+    const r = rendererRef.current;
+    const run = runRef.current;
+    const plan = (await r?.snapshot()) ?? null;
+
+    // A second frame showing peak density, captured by switching the overlay to
+    // its peak field and restoring afterwards. The reviewer wants the worst
+    // moment, not whatever the crowd happened to be doing when the button was
+    // pressed.
+    let heatmap: string | null = null;
+    if (r && run && run.spawned > 0) {
+      r.setDensity(run.density(true));
+      heatmap = await r.snapshot();
+      r.setDensity(st.showHeatmap ? run.density(st.heatmapPeak) : null);
+    }
     setReport({
       venueName: st.venueName,
       document: historyRef.current?.document ?? null,
@@ -455,6 +478,7 @@ export function App() {
       thresholds: st.thresholds,
       engineVersion: st.engineVersion,
       plan,
+      heatmap,
       generatedAt: new Date(),
     });
   }, []);
@@ -493,34 +517,39 @@ export function App() {
       <main className="body">
         <nav className="rail" aria-label="Tools">
           <RailButton
-            label="Select (V)"
-            glyph="⌖"
+            label="Select"
+            shortcut="V"
+            icon={<IconSelect />}
             active={tool === 'select'}
             onClick={() => setTool('select')}
           />
           <RailButton
-            label="Draw wall (W)"
-            glyph="│"
+            label="Draw wall"
+            shortcut="W"
+            icon={<IconWall />}
             active={tool === 'wall'}
             onClick={() => setTool('wall')}
           />
           <RailButton
-            label="Draw zone (Z)"
-            glyph="▢"
+            label="Draw zone"
+            shortcut="Z"
+            icon={<IconZone />}
             active={tool === 'zone'}
             onClick={() => setTool('zone')}
           />
           <RailButton
-            label="Place door (D)"
-            glyph="◠"
+            label="Place door"
+            shortcut="D"
+            icon={<IconDoor />}
             active={tool === 'door'}
             onClick={() => setTool('door')}
           />
+          <div className="rail-rule" />
+          <RailButton label="Undo" shortcut="⌘Z" icon={<IconUndo />} onClick={undo} disabled={!canUndo} />
+          <RailButton label="Redo" shortcut="⇧⌘Z" icon={<IconRedo />} onClick={redo} disabled={!canRedo} />
           <div className="rail-spacer" />
-          <RailButton label="Undo (⌘Z)" glyph="↶" onClick={undo} disabled={!canUndo} />
-          <RailButton label="Redo (⇧⌘Z)" glyph="↷" onClick={redo} disabled={!canRedo} />
-          <RailButton label="Fit view" glyph="⤢" onClick={() => rendererRef.current?.fit()} />
-          <RailButton label="Compliance report" glyph="▤" onClick={openReport} />
+          <RailButton label="Fit view" icon={<IconFit />} onClick={() => rendererRef.current?.fit()} />
+          <RailButton label="Compliance report" icon={<IconReport />} onClick={openReport} />
         </nav>
 
         <div
@@ -583,27 +612,33 @@ function pointAtParam(poly: number[][], t: number): { x: number; y: number } | n
 
 function RailButton({
   label,
-  glyph,
+  shortcut,
+  icon,
   active,
   disabled,
   onClick,
 }: {
   label: string;
-  glyph: string;
+  shortcut?: string;
+  icon: React.ReactNode;
   active?: boolean;
   disabled?: boolean;
   onClick?: () => void;
 }) {
+  // The shortcut belongs in the tooltip, not the accessible name: a screen
+  // reader announcing "Draw wall W" is worse than "Draw wall".
+  const title = shortcut ? `${label}  ${shortcut}` : label;
   return (
     <button
       type="button"
       className={`rail-btn${active ? ' is-active' : ''}`}
-      title={disabled ? `${label} — not yet available` : label}
+      title={title}
       aria-label={label}
+      aria-pressed={active}
       disabled={disabled}
       onClick={onClick}
     >
-      <span aria-hidden="true">{glyph}</span>
+      {icon}
     </button>
   );
 }

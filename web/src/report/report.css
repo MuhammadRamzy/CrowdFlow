@@ -281,6 +281,25 @@
   padding-left: 2mm;
 }
 
+.findings tr.working td {
+  padding-top: 0;
+  padding-bottom: 2.5mm;
+  border-bottom: 0.5pt solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: 7.5pt;
+  color: var(--quiet);
+}
+
+.findings tr.working.is-fail td:first-child {
+  border-left: 1.5pt solid var(--fail);
+}
+
+/* The row above a working line must not draw its own rule, or the pair reads
+   as two findings rather than one with its calculation. */
+.findings tbody tr:has(+ tr.working) td {
+  border-bottom: 0;
+}
+
 .finding-clause {
   font-family: var(--font-mono);
   font-size: 8pt;
@@ -375,4 +394,22 @@
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+}
+
+/* A caution is not a failure — it qualifies a number rather than rejecting it,
+   so it reads as an annotation in the margin rather than an alarm. */
+.spec tr.is-caution th {
+  color: var(--fail);
+}
+
+.spec tr.is-caution td {
+  border-left: 1.5pt solid var(--fail);
+  padding-left: 2mm;
+}
+
+.caution {
+  display: block;
+  margin-top: 1.5mm;
+  font-size: 8pt;
+  color: var(--fail);
 }
