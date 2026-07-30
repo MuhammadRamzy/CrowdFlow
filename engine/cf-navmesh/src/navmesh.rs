@@ -142,6 +142,37 @@ impl NavMesh {
         })
     }
 
+    /// The closest point on walkable floor to `p`.
+    ///
+    /// Returns `p` itself when it is already on floor. Otherwise finds the
+    /// nearest point on the boundary of the walkable region.
+    ///
+    /// This is a recovery path, not a routine query: it scans every walkable
+    /// triangle, so it is only affordable because it should almost never run.
+    /// An agent outside the mesh means the physics let it escape, and the right
+    /// response is to put it back and count the event rather than to lose it.
+    pub fn nearest_walkable_point(&self, p: Vec2) -> Option<Vec2> {
+        if self.locate(p).is_some() {
+            return Some(p);
+        }
+        let mut best: Option<(f64, Vec2)> = None;
+        for (idx, t) in self.tri.live() {
+            if !self.regions.is_walkable(idx) {
+                continue;
+            }
+            for i in 0..3 {
+                let (a, b) = t.edge(i);
+                let seg = cf_geom::Segment::new(self.tri.points[a], self.tri.points[b]);
+                let c = seg.closest_point(p);
+                let d = c.distance(p);
+                if best.map(|(bd, _)| d < bd).unwrap_or(true) {
+                    best = Some((d, c));
+                }
+            }
+        }
+        best.map(|(_, c)| c)
+    }
+
     /// Shortest walkable path from `from` to `to`, as a polyline including both
     /// endpoints. `None` if either point is outside the walkable region or no
     /// route exists.

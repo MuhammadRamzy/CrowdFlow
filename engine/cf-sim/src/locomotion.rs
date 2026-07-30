@@ -342,12 +342,111 @@ pub fn resolve_contacts(
                 continue;
             }
             let k = 1.0 / scratch.corr_n[i] as f32;
-            let cx = scratch.corr_x[i] * k;
-            let cy = scratch.corr_y[i] * k;
+            let mut cx = scratch.corr_x[i] * k;
+            let mut cy = scratch.corr_y[i] * k;
+
+            // Cap the correction at one radius per iteration. In a dense jam a
+            // body can accumulate pushes from many neighbours at once, and the
+            // sum can exceed its own size — which teleports it past a wall
+            // corner and out of the building. Bodies do not move like that, and
+            // an escaped agent has no route and stalls the run forever.
+            let mag = fmath::hypot2(cx, cy);
+            let cap = w.radius[i];
+            if mag > cap && mag > 1e-9 {
+                let s = cap / mag;
+                cx *= s;
+                cy *= s;
+            }
             w.pos_x[i] += cx;
             w.pos_y[i] += cy;
             w.vel_x[i] += cx * inv_dt;
             w.vel_y[i] += cy * inv_dt;
+        }
+    }
+
+    worst
+}
+
+/// Project agents out of walls.
+///
+/// # Why this is not optional
+///
+/// Wall repulsion is a *soft* force: it grows large as an agent approaches, but
+/// nothing bounds how hard the crowd behind can push. Under enough pressure —
+/// several hundred agents converging on a doorway — an agent gets squeezed
+/// through a corner and ends up outside the building. It then has no route, no
+/// exit within reach, and stands there forever while the run waits for it.
+///
+/// That failure was observed at exactly 2 agents in 500 during a hall
+/// evacuation, at the two corners where the south wall meets the side walls. It
+/// is silent: the population count still balances, the simulation still runs,
+/// and the egress time is simply wrong.
+///
+/// So walls are enforced as a *hard* constraint, the same way agent overlap is.
+/// A position inside a wall is projected onto its surface. Unlike a force, a
+/// projection cannot be overpowered.
+///
+/// Returns the deepest penetration found before correction, in metres.
+pub fn resolve_wall_contacts(w: &mut World, walls: &[cf_geom::Segment], iterations: u32) -> f32 {
+    let mut worst = 0.0f32;
+
+    for _ in 0..iterations {
+        let mut any = false;
+        for i in 0..w.len() {
+            if !w.active[i] || !w.state[i].is_mobile() {
+                continue;
+            }
+            let r = w.radius[i] as f64;
+            for seg in walls {
+                let p = Vec2::new(w.pos_x[i] as f64, w.pos_y[i] as f64);
+
+                // Cheap reject before the closest-point solve.
+                let lo_x = seg.a.x.min(seg.b.x) - r;
+                let hi_x = seg.a.x.max(seg.b.x) + r;
+                let lo_y = seg.a.y.min(seg.b.y) - r;
+                let hi_y = seg.a.y.max(seg.b.y) + r;
+                if p.x < lo_x || p.x > hi_x || p.y < lo_y || p.y > hi_y {
+                    continue;
+                }
+
+                let c = seg.closest_point(p);
+                let d = p - c;
+                let dist = d.length();
+                if dist >= r {
+                    continue;
+                }
+
+                let pen = (r - dist) as f32;
+                if pen > worst {
+                    worst = pen;
+                }
+                any = true;
+
+                // Exactly on the wall gives no direction to push along; use the
+                // segment normal so the agent still leaves rather than sticking.
+                let n = match d.normalized() {
+                    Some(n) if dist > 1e-9 => n,
+                    _ => (seg.b - seg.a)
+                        .normalized()
+                        .map(|t| t.perp())
+                        .unwrap_or(Vec2::new(0.0, 1.0)),
+                };
+
+                let target = c + n * r;
+                w.pos_x[i] = target.x as f32;
+                w.pos_y[i] = target.y as f32;
+
+                // Kill the velocity component driving into the wall. Leaving it
+                // makes agents vibrate against walls instead of sliding along.
+                let vn = w.vel_x[i] * n.x as f32 + w.vel_y[i] * n.y as f32;
+                if vn < 0.0 {
+                    w.vel_x[i] -= vn * n.x as f32;
+                    w.vel_y[i] -= vn * n.y as f32;
+                }
+            }
+        }
+        if !any {
+            break;
         }
     }
 

@@ -1,0 +1,30 @@
+[package]
+name = "cf-wasm"
+description = "WebAssembly bindings for the CrowdFlow engine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cf-compile.workspace = true
+cf-geom = { workspace = true, features = ["serde"] }
+cf-navmesh.workspace = true
+cf-schema.workspace = true
+cf-sim.workspace = true
+
+wasm-bindgen = "0.2"
+serde = { workspace = true }
+serde_json.workspace = true
+serde-wasm-bindgen = "0.6"
+
+# Small, and gives a readable stack trace instead of "unreachable executed"
+# when something panics inside the worker.
+console_error_panic_hook = { version = "0.1", optional = true }
+
+[features]
+default = ["console_error_panic_hook"]

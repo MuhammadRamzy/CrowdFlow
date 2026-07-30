@@ -26,8 +26,8 @@ __pycache__/
 .vscode/*
 !.vscode/extensions.json
 
-# Build output
-/web/public/wasm/
+# Build output — regenerate with `pnpm --dir web engine`
+/web/src/engine/
 *.wasm
 
 # Local data

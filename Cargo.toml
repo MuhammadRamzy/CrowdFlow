@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["engine/cf-compile", "engine/cf-geom", "engine/cf-navmesh", "engine/cf-schema", "engine/cf-sim"]
+members = ["engine/cf-compile", "engine/cf-geom", "engine/cf-navmesh", "engine/cf-schema", "engine/cf-sim", "engine/cf-wasm"]
 
 [workspace.package]
 version = "0.1.0"
@@ -13,6 +13,8 @@ repository = "https://github.com/crowdflow-studio/crowdflow"
 cf-geom = { path = "engine/cf-geom", default-features = false }
 cf-navmesh = { path = "engine/cf-navmesh" }
 cf-schema = { path = "engine/cf-schema" }
+cf-compile = { path = "engine/cf-compile" }
+cf-sim = { path = "engine/cf-sim" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 schemars = "0.8"
@@ -28,3 +30,9 @@ panic = "abort"
 # inconsistently across targets — see docs/04-track-b-simulation-engine.md §5.
 [profile.release.package.cf-schema]
 opt-level = 2
+
+# cf-wasm ships to every user on page load, so optimise it for size rather than
+# speed. The hot loop lives in cf-sim, which keeps opt-level 3 from the profile
+# above — so this costs nothing that matters.
+[profile.release.package.cf-wasm]
+opt-level = "s"

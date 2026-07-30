@@ -106,6 +106,9 @@ pub struct SimStats {
     /// Largest agent overlap remaining after the contact solve, metres. A
     /// persistently non-zero value means the solve is not converging.
     pub max_overlap: f32,
+    /// Agents found outside the walkable mesh this tick and put back. Should be
+    /// zero; anything else means the physics is leaking.
+    pub escaped: u32,
 }
 
 /// A running simulation.
@@ -294,8 +297,12 @@ impl Sim {
             );
         }
 
-        // 4. Integrate, then project bodies apart.
+        // 4. Integrate, clamp to walls, then project bodies apart and clamp
+        //    again. Enforcing walls on both sides of the agent solve means a
+        //    body never starts an iteration inside a wall, and the solve cannot
+        //    leave it in one.
         locomotion::integrate(&mut self.world, &self.params.locomotion, &self.scratch, dt);
+        locomotion::resolve_wall_contacts(&mut self.world, &self.walls, 1);
         let max_overlap = locomotion::resolve_contacts(
             &mut self.world,
             &self.grid,
@@ -304,7 +311,19 @@ impl Sim {
             dt,
         );
 
-        // 5. Classify motion, then let anyone at a door leave.
+        // 5. Walls are hard constraints, applied after agent contacts so the
+        //    crowd cannot push anyone through one. Soft repulsion alone loses
+        //    agents through corners under load — see `resolve_wall_contacts`.
+        let wall_pen = locomotion::resolve_wall_contacts(&mut self.world, &self.walls, 2);
+
+        // 6. Safety net: the navmesh is the authority on where an agent may be.
+        //    Wall projection alone cannot recover an agent that already escaped,
+        //    because it pushes toward whichever side the agent is on. Anyone off
+        //    the mesh is put back and counted — a non-zero count here means the
+        //    physics is leaking and should be investigated, not tuned around.
+        let escaped = self.recover_escaped();
+
+        // 7. Classify motion, then let anyone at a door leave.
         locomotion::update_blocked_state(&mut self.world, self.params.blocked_speed);
         self.process_exits();
 
@@ -329,7 +348,8 @@ impl Sim {
                 .zip(&self.world.active)
                 .filter(|(s, a)| **a && **s == AgentState::Blocked)
                 .count() as u32,
-            max_overlap,
+            max_overlap: max_overlap.max(wall_pen),
+            escaped,
         };
         self.stats
     }
@@ -359,8 +379,14 @@ impl Sim {
             // Advance past every waypoint already reached — a fast agent can
             // clear more than one in a tick, and stopping at the first would
             // make it double back.
-            while let Some(t) = route.target() {
-                if p.distance(t) <= wp_r as f64 {
+            //
+            // The *final* waypoint is never passed. An agent that has arrived
+            // but not yet left must keep pressing toward the exit: if it simply
+            // stopped, one jammed at a doorway would stand there forever,
+            // just outside the exit radius, and never leave. People at a door
+            // keep pushing, and so must this.
+            while route.next + 1 < route.points.len() {
+                if p.distance(route.points[route.next]) <= wp_r as f64 {
                     route.next += 1;
                 } else {
                     break;
@@ -386,6 +412,36 @@ impl Sim {
                 }
             }
         }
+    }
+
+    /// Put any agent that ended up off the mesh back onto it.
+    fn recover_escaped(&mut self) -> u32 {
+        let Some(mesh) = &self.mesh else {
+            return 0;
+        };
+        let mut fixes: Vec<(usize, Vec2)> = Vec::new();
+        for i in 0..self.world.len() {
+            if !self.world.active[i] {
+                continue;
+            }
+            let p = Vec2::new(self.world.pos_x[i] as f64, self.world.pos_y[i] as f64);
+            if mesh.locate(p).is_some() {
+                continue;
+            }
+            if let Some(c) = mesh.nearest_walkable_point(p) {
+                fixes.push((i, c));
+            }
+        }
+        let n = fixes.len() as u32;
+        for (i, c) in fixes {
+            self.world.pos_x[i] = c.x as f32;
+            self.world.pos_y[i] = c.y as f32;
+            // Zero the velocity: whatever it was, it took the agent through a
+            // wall, and keeping it would push straight back out.
+            self.world.vel_x[i] = 0.0;
+            self.world.vel_y[i] = 0.0;
+        }
+        n
     }
 
     fn process_exits(&mut self) {
