@@ -74,6 +74,17 @@ pub struct LocomotionParams {
     /// Speed ceiling as a multiple of desired speed. Bounds the worst case if a
     /// force ever misbehaves.
     pub max_speed_factor: f32,
+    /// Radius over which an agent senses local density, metres.
+    ///
+    /// 1.0 m gives a sensing area of π m², a few body-widths — roughly the
+    /// distance over which a walker judges whether the way ahead is clear.
+    pub density_sense_radius: f32,
+    /// How strongly local density suppresses desired speed, 0 to 1.
+    ///
+    /// 1.0 applies Weidmann's relation exactly; 0 disables the effect and
+    /// leaves congestion entirely to the repulsion forces, which measurement
+    /// shows is not enough.
+    pub density_speed_coupling: f32,
 }
 
 impl Default for LocomotionParams {
@@ -89,6 +100,8 @@ impl Default for LocomotionParams {
             contact_iterations: 3,
             contact_stiffness: 0.9,
             max_speed_factor: 1.6,
+            density_sense_radius: 1.0,
+            density_speed_coupling: 1.0,
         }
     }
 }
@@ -101,9 +114,25 @@ pub struct LocomotionScratch {
     corr_x: Vec<f32>,
     corr_y: Vec<f32>,
     corr_n: Vec<u32>,
+    /// Positions before integration, for the post-constraint velocity update.
+    prev_x: Vec<f32>,
+    prev_y: Vec<f32>,
 }
 
 impl LocomotionScratch {
+    /// Record positions before integration.
+    ///
+    /// Position-based dynamics derives velocity from where a body *ended up*
+    /// over the whole step, not from each correction as it is applied. Call
+    /// this immediately before `integrate`.
+    pub fn snapshot_positions(&mut self, w: &World) {
+        let n = w.len();
+        self.prev_x.clear();
+        self.prev_y.clear();
+        self.prev_x.extend_from_slice(&w.pos_x[..n]);
+        self.prev_y.extend_from_slice(&w.pos_y[..n]);
+    }
+
     fn resize(&mut self, n: usize) {
         self.force_x.clear();
         self.force_y.clear();
@@ -115,6 +144,10 @@ impl LocomotionScratch {
         self.corr_x.resize(n, 0.0);
         self.corr_y.resize(n, 0.0);
         self.corr_n.resize(n, 0);
+        self.prev_x.clear();
+        self.prev_y.clear();
+        self.prev_x.resize(n, 0.0);
+        self.prev_y.resize(n, 0.0);
     }
 }
 
@@ -263,7 +296,7 @@ pub fn resolve_contacts(
     grid: &SpatialGrid,
     params: &LocomotionParams,
     scratch: &mut LocomotionScratch,
-    dt: f32,
+    _dt: f32,
 ) -> f32 {
     let n = w.len();
     let mut worst = 0.0f32;
@@ -334,9 +367,8 @@ pub fn resolve_contacts(
             break;
         }
 
-        // Apply averaged corrections, and fold the position change back into
-        // velocity so momentum stays consistent with where bodies ended up.
-        let inv_dt = if dt > 1e-9 { 1.0 / dt } else { 0.0 };
+        // Positions only. Velocity is derived once, after every constraint has
+        // been applied — see `derive_velocity_from_positions`.
         for i in 0..n {
             if scratch.corr_n[i] == 0 {
                 continue;
@@ -359,8 +391,6 @@ pub fn resolve_contacts(
             }
             w.pos_x[i] += cx;
             w.pos_y[i] += cy;
-            w.vel_x[i] += cx * inv_dt;
-            w.vel_y[i] += cy * inv_dt;
         }
     }
 
@@ -451,6 +481,117 @@ pub fn resolve_wall_contacts(w: &mut World, walls: &[cf_geom::Segment], iteratio
     }
 
     worst
+}
+
+/// Recompute velocity from the distance actually travelled this step.
+///
+/// # Why velocity is derived, not accumulated
+///
+/// An earlier version folded each contact correction into velocity as it was
+/// applied, adding `correction / dt` per pair per iteration. With three
+/// iterations and many neighbours that injects several impulses per step, and
+/// the injected energy has nowhere to go: measured against Weidmann, a crowd at
+/// 2 persons/m² walked at 2.14 m/s — above free walking speed, pinned exactly
+/// at the speed cap. A contact solver that makes a dense crowd move *faster*
+/// than an empty one has inverted the thing it exists to model.
+///
+/// Position-based dynamics does not work that way. Constraints move positions;
+/// velocity is then whatever the net displacement implies, computed once. A
+/// projection cannot add energy, which is the property that made PBD worth
+/// choosing (see the module docs).
+pub fn derive_velocity_from_positions(w: &mut World, scratch: &LocomotionScratch, dt: f32) {
+    if dt <= 1e-9 {
+        return;
+    }
+    let inv_dt = 1.0 / dt;
+    for i in 0..w.len() {
+        if !w.active[i] || !w.state[i].is_mobile() {
+            continue;
+        }
+        if i >= scratch.prev_x.len() {
+            continue;
+        }
+        w.vel_x[i] = (w.pos_x[i] - scratch.prev_x[i]) * inv_dt;
+        w.vel_y[i] = (w.pos_y[i] - scratch.prev_y[i]) * inv_dt;
+    }
+}
+
+/// Weidmann's (1993) speed–density relation, as a fraction of free speed.
+///
+/// `v(ρ)/v₀ = 1 − exp(−γ · (1/ρ − 1/ρ_max))`, γ = 1.913, ρ_max = 5.4 persons/m².
+#[inline]
+fn weidmann_factor(density: f32) -> f32 {
+    const GAMMA: f32 = 1.913;
+    const JAM: f32 = 5.4;
+    if density <= 0.05 {
+        return 1.0;
+    }
+    if density >= JAM {
+        return 0.0;
+    }
+    1.0 - fmath::exp(-GAMMA * (1.0 / density - 1.0 / JAM))
+}
+
+/// Scale each agent's desired speed by the density it is walking into.
+///
+/// # Why this exists rather than tuning the repulsion constants
+///
+/// The Social Force Model's repulsion should slow a crowd emergently, and at
+/// low density it does. Measured against Weidmann it does not do enough: at
+/// 2 persons/m² the model walked at 1.29 m/s where measurement says 0.61 —
+/// agents simply pushed through one another's repulsion fields. Cranking `A`
+/// and `B` until the curve fits makes the system stiff, needs a smaller
+/// timestep, and buys a fit to one point at the cost of behaviour everywhere
+/// else.
+///
+/// Applying the published relation directly is what
+/// `docs/04-track-b-simulation-engine.md` §B2 specified, and it is honest about
+/// what is empirical: the fundamental diagram is *measured human behaviour*, not
+/// something to be re-derived from first principles by a force model. The forces
+/// keep their job — collision avoidance, lane formation, arching at exits — and
+/// the empirical curve sets the pace.
+///
+/// Run after steering and before forces, so the driving force targets an
+/// already-reduced desired velocity.
+pub fn apply_density_speed_limit(w: &mut World, grid: &SpatialGrid, params: &LocomotionParams) {
+    let r = params.density_sense_radius;
+    if r <= 0.0 || params.density_speed_coupling <= 0.0 {
+        return;
+    }
+    let r_sq = r * r;
+    // Area of the sensing disc, so a neighbour count becomes persons/m².
+    let inv_area = 1.0 / (std::f32::consts::PI * r_sq);
+
+    for i in 0..w.len() {
+        if !w.active[i] || !w.state[i].is_mobile() {
+            continue;
+        }
+        let px = w.pos_x[i];
+        let py = w.pos_y[i];
+
+        let mut count = 0u32;
+        grid.for_each_near(Vec2::new(px as f64, py as f64), |j| {
+            let j = j as usize;
+            if j == i || !w.active[j] {
+                return;
+            }
+            let dx = px - w.pos_x[j];
+            let dy = py - w.pos_y[j];
+            if dx * dx + dy * dy <= r_sq {
+                count += 1;
+            }
+        });
+
+        // The agent itself occupies the disc too.
+        let density = (count + 1) as f32 * inv_area;
+        let factor = weidmann_factor(density);
+        // Interpolate toward the Weidmann factor so the coupling is tunable
+        // without becoming a different model at intermediate settings.
+        let scale = 1.0 - params.density_speed_coupling * (1.0 - factor);
+
+        w.des_x[i] *= scale;
+        w.des_y[i] *= scale;
+    }
 }
 
 /// Set each agent's desired velocity to point at a fixed target.

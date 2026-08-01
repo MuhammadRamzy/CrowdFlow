@@ -20,7 +20,7 @@ import {
 import type { Point, Selection, ToolId } from '../canvas/tools';
 import { History, RemoveOpening, RemoveWall, RemoveZone } from '../doc/commands';
 import type { VenueDoc } from '../schema/venue';
-import { engineVersion, loadEngine, Run, Venue } from '../engine/bridge';
+import { engineVersion, loadEngine, Run, Venue } from '../engine';
 import { useApp } from '../state/store';
 import { Inspector } from './Inspector';
 import { StatusBar } from './StatusBar';

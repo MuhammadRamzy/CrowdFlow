@@ -19,8 +19,8 @@ import {
   Sprite,
   Texture,
 } from 'pixi.js';
-import type { DensityField, VenueGeometry } from '../engine/bridge';
-import { AgentState } from '../engine/bridge';
+import type { DensityField, VenueGeometry } from '../engine';
+import { AgentState } from '../engine';
 
 /** Reads the palette from CSS so tokens.css stays the single source of colour. */
 function token(name: string, fallback: number): number {

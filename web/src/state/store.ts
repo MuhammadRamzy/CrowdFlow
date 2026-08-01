@@ -9,7 +9,7 @@
  */
 
 import { create } from 'zustand';
-import type { CompileWarning, SimStats } from '../engine/bridge';
+import type { CompileWarning, SimStats } from '../engine';
 
 export type Phase = 'loading' | 'ready' | 'error';
 

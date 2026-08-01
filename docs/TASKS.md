@@ -59,11 +59,13 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [x] Fixed-timestep step loop (time derived from tick, no drift)
 - [x] Social Force Model: drive, agent repulsion (anisotropic), wall repulsion
 - [x] PBD contact resolution (Jacobi, order-independent)
-- [ ] Speed distributions + Weidmann density-speed reduction
+- [x] Speed distributions + Weidmann density-speed reduction
 - [x] Seeded PRNG with per-system streams (counter-based, order-independent)
 - [ ] RiMEA component tests (walking speed, stairs, corner, speed distribution, door flow)
 - [ ] Fundamental diagram harness vs Weidmann envelope
-- [ ] **Calibrate locomotion: model achieves ~111 p/m/min specific flow vs Green Guide's 82 — egress times are currently optimistic**
+- [x] Calibration harness: doorway flow + speed–density vs Weidmann (`cf_sim::calibration`)
+- [x] Weidmann density–speed coupling (ADR 0005)
+- [ ] **Calibrate the parameters. ρ=2.0 reads above free speed; 0.9 m doorways pass almost nobody. Baseline numbers in `docs/STATE.md`.**
 - [ ] Determinism gate G2 in CI (x86-64 / aarch64 / wasm32)
 
 ### B3 — WASM host (W12–W17)

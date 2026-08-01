@@ -33,6 +33,10 @@ __pycache__/
 # Playwright MCP scratch output
 .playwright-mcp/
 *.png
+# The wasm bundle. `wasm-pack` writes its own `.gitignore` containing `*` into
+# this directory, so ANY file placed here is invisible to git — the hand-written
+# bridge lived here once, was never committed, and a fresh clone could not build.
+# Authored source goes in `web/src/`, never inside this directory.
 /web/src/engine/
 *.wasm
 

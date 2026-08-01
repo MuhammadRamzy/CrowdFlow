@@ -21,7 +21,7 @@
  */
 
 import { Fragment } from 'react';
-import type { CompileWarning, SimStats } from '../engine/bridge';
+import type { CompileWarning, SimStats } from '../engine';
 import { formatClock, occupantLoad } from '../state/store';
 import type { Thresholds } from '../state/store';
 import type { VenueDoc } from '../schema/venue';

@@ -28,10 +28,12 @@
 //! - [`spatial`] — uniform grid for neighbour queries. **Done.**
 //! - [`world`] — Structure-of-Arrays agent storage. **Done.**
 //! - [`locomotion`] — Social Force Model + position-based contacts. **Done.**
+//! - [`calibration`] — measurement against published pedestrian data.
 //! - [`density`] — smoothed crowd-density field. **Done.**
 //! - [`sim`] — fixed-timestep step loop, routing and exits. **Done.**
 //! - Flow fields, queues, groups, evacuation mode — next.
 
+pub mod calibration;
 pub mod density;
 pub mod fmath;
 pub mod locomotion;

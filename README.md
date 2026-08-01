@@ -4,7 +4,56 @@ Browser-based crowd simulation and venue modelling. Import or draw a venue, auth
 rules, simulate tens of thousands of agents client-side via Rust/WebAssembly, and export a
 regulator-ready compliance dossier.
 
-**Status:** planning complete, implementation not started.
+**Status:** the engine and a working editor exist. You can draw a venue, compile it,
+simulate a few hundred agents, and export a compliance dossier. The locomotion model is
+**not yet calibrated** — see the caution in any generated report — and the RiMEA
+verification suite is outstanding, so no figure it produces is fit for a statutory
+submission today.
+
+---
+
+## Running it
+
+```bash
+# once — install frontend dependencies
+cd web && pnpm install
+
+# once, and again after any Rust change — compile the engine to WebAssembly
+pnpm engine
+
+# start the dev server
+pnpm dev            # → http://localhost:5173
+```
+
+`pnpm engine` runs `wasm-pack` over `engine/cf-wasm` and writes the bundle into
+`web/src/engine/`, which is gitignored — so a fresh clone must run it before
+`pnpm dev`, or the app will show "Engine failed to start".
+
+> Nothing hand-written belongs in `web/src/engine/`. `wasm-pack` writes a
+> `.gitignore` containing `*` there, so anything you put in it is invisible to
+> git and will not survive a clone. The typed bridge lives at
+> `web/src/engine.ts` for exactly this reason.
+
+### What to try
+
+1. The **hall with two doors** loads on start. Drag to pan, scroll to zoom.
+2. **Place agents** in the inspector, then press play in the timeline. Raise the
+   speed to 16× to watch a full evacuation in a few seconds.
+3. Click a wall or a doorway to select it. Widen a doorway and watch its Green
+   Guide rate of passage move.
+4. Delete a wall and watch the venue go unsimulable — the status bar goes to
+   ALARM and the validation panel says why. `⌘Z` puts it back.
+5. **Compliance report** in the tool rail produces the dossier; print it or save
+   it as PDF from the browser's print dialog.
+
+### Other commands
+
+```bash
+cargo test                                # the whole engine, 218 tests
+cargo run -p cf-schema --bin gen-schema   # regenerate schema/ after type changes
+pnpm --dir web schema                     # regenerate TypeScript types from schema/
+pnpm --dir web build                      # production build
+```
 
 ---
 

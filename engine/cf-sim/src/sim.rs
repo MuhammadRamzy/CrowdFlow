@@ -336,7 +336,12 @@ impl Sim {
         // 2. Follow routes: pick each agent's desired velocity.
         self.steer();
 
-        // 3. Social forces, then walls.
+        // 3. Local density suppresses desired speed. Applied after steering so
+        //    it scales a direction that already exists, and before forces so the
+        //    driving term targets the reduced velocity.
+        locomotion::apply_density_speed_limit(&mut self.world, &self.grid, &self.params.locomotion);
+
+        // 4. Social forces, then walls.
         locomotion::compute_forces(
             &self.world,
             &self.grid,
@@ -353,10 +358,11 @@ impl Sim {
             );
         }
 
-        // 4. Integrate, clamp to walls, then project bodies apart and clamp
+        // 5. Integrate, clamp to walls, then project bodies apart and clamp
         //    again. Enforcing walls on both sides of the agent solve means a
         //    body never starts an iteration inside a wall, and the solve cannot
         //    leave it in one.
+        self.scratch.snapshot_positions(&self.world);
         locomotion::integrate(&mut self.world, &self.params.locomotion, &self.scratch, dt);
         locomotion::resolve_wall_contacts(&mut self.world, &self.walls, 1);
         let max_overlap = locomotion::resolve_contacts(
@@ -367,19 +373,24 @@ impl Sim {
             dt,
         );
 
-        // 5. Walls are hard constraints, applied after agent contacts so the
+        // 6. Walls are hard constraints, applied after agent contacts so the
         //    crowd cannot push anyone through one. Soft repulsion alone loses
         //    agents through corners under load — see `resolve_wall_contacts`.
         let wall_pen = locomotion::resolve_wall_contacts(&mut self.world, &self.walls, 2);
 
-        // 6. Safety net: the navmesh is the authority on where an agent may be.
+        // Velocity follows from where bodies ended up, once every constraint has
+        // been applied. Folding corrections into velocity as they happen injects
+        // energy — see `derive_velocity_from_positions`.
+        locomotion::derive_velocity_from_positions(&mut self.world, &self.scratch, dt);
+
+        // 7. Safety net: the navmesh is the authority on where an agent may be.
         //    Wall projection alone cannot recover an agent that already escaped,
         //    because it pushes toward whichever side the agent is on. Anyone off
         //    the mesh is put back and counted — a non-zero count here means the
         //    physics is leaking and should be investigated, not tuned around.
         let escaped = self.recover_escaped();
 
-        // 7. Classify motion, then let anyone at a door leave.
+        // 8. Classify motion, then let anyone at a door leave.
         locomotion::update_blocked_state(&mut self.world, self.params.blocked_speed);
         self.process_exits();
 
