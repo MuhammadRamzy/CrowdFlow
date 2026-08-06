@@ -42,3 +42,4 @@ __pycache__/
 
 # Local data
 /scratch/
+.claude/worktrees/

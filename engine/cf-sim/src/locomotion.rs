@@ -44,7 +44,7 @@
 use crate::fmath;
 use crate::spatial::SpatialGrid;
 use crate::world::{AgentState, World};
-use cf_geom::Vec2;
+use cf_geom::{Segment, Vec2};
 
 /// Tunable constants for the locomotion model.
 #[derive(Clone, Copy, Debug)]
@@ -131,6 +131,18 @@ impl LocomotionScratch {
         self.prev_y.clear();
         self.prev_x.extend_from_slice(&w.pos_x[..n]);
         self.prev_y.extend_from_slice(&w.pos_y[..n]);
+    }
+
+    /// Where agent `i` was at the start of the step, if it was recorded.
+    ///
+    /// Exit detection needs the *path* an agent took this tick, not just where
+    /// it ended: a doorway is crossed, not arrived at.
+    pub fn previous_position(&self, i: usize) -> Option<Vec2> {
+        if i < self.prev_x.len() {
+            Some(Vec2::new(self.prev_x[i] as f64, self.prev_y[i] as f64))
+        } else {
+            None
+        }
     }
 
     fn resize(&mut self, n: usize) {
@@ -553,14 +565,18 @@ fn weidmann_factor(density: f32) -> f32 {
 ///
 /// Run after steering and before forces, so the driving force targets an
 /// already-reduced desired velocity.
-pub fn apply_density_speed_limit(w: &mut World, grid: &SpatialGrid, params: &LocomotionParams) {
+pub fn apply_density_speed_limit(
+    w: &mut World,
+    grid: &SpatialGrid,
+    walls: &[Segment],
+    params: &LocomotionParams,
+) {
     let r = params.density_sense_radius;
     if r <= 0.0 || params.density_speed_coupling <= 0.0 {
         return;
     }
     let r_sq = r * r;
-    // Area of the sensing disc, so a neighbour count becomes persons/m².
-    let inv_area = 1.0 / (std::f32::consts::PI * r_sq);
+    let full_area = std::f32::consts::PI * r_sq;
 
     for i in 0..w.len() {
         if !w.active[i] || !w.state[i].is_mobile() {
@@ -582,8 +598,32 @@ pub fn apply_density_speed_limit(w: &mut World, grid: &SpatialGrid, params: &Loc
             }
         });
 
+        // Only the *walkable* part of the disc counts.
+        //
+        // Dividing by the full πr² assumes the agent is standing in open floor.
+        // An agent in a doorway has half its disc on the far side of a wall,
+        // reads half the true density, and walks on at nearly free speed — so
+        // the one place a bottleneck must form is the one place the sensor was
+        // blind. That put four times too many people per second through a 1 m
+        // door while every other diagnostic looked healthy.
+        //
+        // Each wall nearer than r cuts a circular segment off the disc:
+        //   A = r²·acos(d/r) − d·√(r² − d²)
+        // Exact for a single straight wall; at a corner two walls overlap and
+        // this over-subtracts, so the remaining area is floored well above zero
+        // rather than being allowed to collapse and divide by nothing.
+        let mut cut = 0.0f32;
+        for seg in walls {
+            let d = seg.distance_to_point(Vec2::new(px as f64, py as f64)) as f32;
+            if d >= r {
+                continue;
+            }
+            cut += r_sq * fmath::acos(d / r) - d * fmath::sqrt(r_sq - d * d);
+        }
+        let area = (full_area - cut).max(full_area * 0.2);
+
         // The agent itself occupies the disc too.
-        let density = (count + 1) as f32 * inv_area;
+        let density = (count + 1) as f32 / area;
         let factor = weidmann_factor(density);
         // Interpolate toward the Weidmann factor so the coupling is tunable
         // without becoming a different model at intermediate settings.

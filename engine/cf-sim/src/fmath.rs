@@ -29,6 +29,16 @@ pub fn sqrt(x: f32) -> f32 {
     x.sqrt()
 }
 
+/// Arc cosine, radians. **Not yet bit-reproducible across targets.**
+///
+/// The argument is clamped to [-1, 1] first: callers reach this by dividing a
+/// distance by a radius, and rounding can put that a hair outside the domain,
+/// where the result would be NaN and would then poison a speed.
+#[inline]
+pub fn acos(x: f32) -> f32 {
+    x.clamp(-1.0, 1.0).acos()
+}
+
 /// Length of a 2D vector. Uses only multiply, add and sqrt, so it is exact.
 #[inline]
 pub fn hypot2(x: f32, y: f32) -> f32 {

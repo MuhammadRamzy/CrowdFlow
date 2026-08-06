@@ -60,6 +60,12 @@ pub struct FlowMeasurement {
     pub duration_s: f64,
     /// Persons per metre per minute.
     pub specific_flow: f64,
+    /// Worst body interpenetration seen during the discharge, metres.
+    ///
+    /// A doorway is where the contact solve is under the most pressure. If this
+    /// is a large fraction of a body radius the crowd is squeezing through, and
+    /// the flow figure above is fiction regardless of how plausible it looks.
+    pub max_overlap: f64,
 }
 
 impl FlowMeasurement {
@@ -162,9 +168,11 @@ pub fn measure_doorway_flow(
     // Record cumulative exits each tick so the steady window can be found
     // afterwards rather than guessed in advance.
     let mut exited_at_tick: Vec<u32> = Vec::new();
+    let mut max_overlap = 0.0f64;
     for _ in 0..8000 {
         let st = sim.step();
         exited_at_tick.push(st.exited);
+        max_overlap = max_overlap.max(st.max_overlap as f64);
         if st.active == 0 {
             break;
         }
@@ -177,6 +185,7 @@ pub fn measure_doorway_flow(
             count: 0,
             duration_s: 0.0,
             specific_flow: 0.0,
+            max_overlap,
         };
     }
 
@@ -207,6 +216,7 @@ pub fn measure_doorway_flow(
         count,
         duration_s,
         specific_flow,
+        max_overlap,
     }
 }
 
@@ -215,9 +225,22 @@ pub fn measure_doorway_flow(
 pub struct SpeedDensityPoint {
     pub density: f64,
     /// Mean speed the model produced, m/s.
+    ///
+    /// This is the speed *along the direction of travel*, which is what a
+    /// fundamental diagram means. See `lateral` for why the distinction is not
+    /// pedantic.
     pub speed: f64,
     /// What Weidmann's relation predicts at this density, m/s.
     pub weidmann: f64,
+    /// Mean |v_y|, m/s — motion across the flow.
+    ///
+    /// A unidirectional crowd should have very little of this. A large value
+    /// means the contact solver is shoving bodies sideways, and a mean *speed*
+    /// (the vector magnitude) would report that jitter as if it were progress.
+    /// Reported separately so the two can never be confused again.
+    pub lateral: f64,
+    /// Mean pairwise overlap among neighbours, metres. Should be near zero.
+    pub overlap: f64,
 }
 
 impl SpeedDensityPoint {
@@ -285,6 +308,8 @@ pub fn measure_speed_at_density(density: f64, params: LocomotionParams) -> Speed
             density,
             speed: 0.0,
             weidmann: weidmann_speed(density),
+            lateral: 0.0,
+            overlap: 0.0,
         };
     }
 
@@ -297,7 +322,10 @@ pub fn measure_speed_at_density(density: f64, params: LocomotionParams) -> Speed
     let dt = 0.05f32;
 
     let mut total = 0.0;
+    let mut total_lateral = 0.0;
     let mut samples = 0u32;
+    let mut overlap_sum = 0.0;
+    let mut overlap_n = 0u32;
 
     for tick in 0..300 {
         grid.rebuild(&w.pos_x, &w.pos_y, &w.active);
@@ -308,7 +336,7 @@ pub fn measure_speed_at_density(density: f64, params: LocomotionParams) -> Speed
             w.des_x[i] = w.desired_speed[i];
             w.des_y[i] = 0.0;
         }
-        locomotion::apply_density_speed_limit(&mut w, &grid, &params);
+        locomotion::apply_density_speed_limit(&mut w, &grid, &[], &params);
         locomotion::compute_forces(&w, &grid, &params, &mut scratch);
         scratch.snapshot_positions(&w);
         locomotion::integrate(&mut w, &params, &scratch, dt);
@@ -335,8 +363,24 @@ pub fn measure_speed_at_density(density: f64, params: LocomotionParams) -> Speed
                 if x < 4.0 || x > length - 4.0 || y < 1.5 || y > width - 1.5 {
                     continue;
                 }
-                total += w.speed(i as u32);
+                let v = w.velocity(i as u32);
+                // Along the flow, not the vector magnitude — see `lateral`.
+                total += v.x;
+                total_lateral += v.y.abs();
                 samples += 1;
+
+                // How far bodies are interpenetrating. If the contact solve is
+                // healthy this is ~0 and the crowd is not boiling.
+                for j in (i + 1)..w.len() {
+                    let dx = w.pos_x[j] - w.pos_x[i];
+                    let dy = w.pos_y[j] - w.pos_y[i];
+                    let d2 = dx * dx + dy * dy;
+                    let rsum = w.radius[i] + w.radius[j];
+                    if d2 < rsum * rsum && d2 > 1e-12 {
+                        overlap_sum += (rsum - d2.sqrt()) as f64;
+                        overlap_n += 1;
+                    }
+                }
             }
         }
     }
@@ -349,6 +393,16 @@ pub fn measure_speed_at_density(density: f64, params: LocomotionParams) -> Speed
             0.0
         },
         weidmann: weidmann_speed(density),
+        lateral: if samples > 0 {
+            total_lateral / samples as f64
+        } else {
+            0.0
+        },
+        overlap: if overlap_n > 0 {
+            overlap_sum / overlap_n as f64
+        } else {
+            0.0
+        },
     }
 }
 
@@ -433,6 +487,40 @@ mod tests {
         );
     }
 
+    /// A parameter sweep, kept as a tool rather than an assertion.
+    ///
+    /// `a_agent` came from Helbing's paper as **2000 N** and was used directly
+    /// as an acceleration, which is a factor of body mass (~80 kg) too large.
+    /// This sweep is what established that; it is left in so the next person
+    /// re-tuning the model has the instrument rather than the conclusion.
+    ///
+    /// ```text
+    /// cargo test -p cf-sim sweep_agent_repulsion -- --ignored --nocapture
+    /// ```
+    #[test]
+    #[ignore = "diagnostic tool, not an assertion"]
+    fn sweep_agent_repulsion() {
+        println!(
+            "{:>8} {:>9} {:>9} {:>10} {:>10} {:>9}",
+            "a_agent", "v(1.0)", "v(2.0)", "lateral(2)", "door 1.0m", "overlap"
+        );
+        for a in [2000.0f32, 200.0, 50.0, 25.0, 12.0, 6.0] {
+            let params = LocomotionParams {
+                a_agent: a,
+                a_wall: a,
+                ..LocomotionParams::default()
+            };
+            let p1 = measure_speed_at_density(1.0, params);
+            let p2 = measure_speed_at_density(2.0, params);
+            let door = measure_doorway_flow(1.0, 200, params);
+            println!(
+                "{a:>8.0} {:>9.2} {:>9.2} {:>10.2} {:>10.1} {:>9.3}",
+                p1.speed, p2.speed, p2.lateral, door.specific_flow, door.max_overlap
+            );
+        }
+        println!("reference: v(1.0)=1.06  v(2.0)=0.61  lateral~0  door=82  overlap~0");
+    }
+
     #[test]
     #[ignore = "locomotion is uncalibrated; see docs/06-validation.md §8"]
     fn speed_falls_as_density_rises() {
@@ -440,11 +528,14 @@ mod tests {
         for d in [0.5, 1.0, 2.0, 3.0] {
             let p = measure_speed_at_density(d, LocomotionParams::default());
             println!(
-                "ρ = {:.1}: model {:.2} m/s, Weidmann {:.2} m/s ({:+.0}%)",
+                "ρ = {:.1}: model {:.2} m/s, Weidmann {:.2} m/s ({:+.0}%) \
+                 · lateral {:.2} m/s · overlap {:.3} m",
                 p.density,
                 p.speed,
                 p.weidmann,
-                p.error() * 100.0
+                p.error() * 100.0,
+                p.lateral,
+                p.overlap
             );
             assert!(
                 p.speed <= prev + 0.05,

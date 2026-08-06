@@ -61,8 +61,6 @@ pub struct SimParams {
     /// derived from it and must not drift over a 90-minute run.
     pub dt: f64,
     pub locomotion: LocomotionParams,
-    /// How close an agent must get to a doorway to be counted as having left.
-    pub exit_radius: f32,
     /// Distance at which a waypoint counts as reached.
     pub waypoint_radius: f32,
     /// Speed below which a mobile agent is considered blocked, m/s.
@@ -74,7 +72,6 @@ impl Default for SimParams {
         Self {
             dt: 0.05,
             locomotion: LocomotionParams::default(),
-            exit_radius: 0.6,
             waypoint_radius: 0.5,
             blocked_speed: 0.1,
         }
@@ -339,7 +336,12 @@ impl Sim {
         // 3. Local density suppresses desired speed. Applied after steering so
         //    it scales a direction that already exists, and before forces so the
         //    driving term targets the reduced velocity.
-        locomotion::apply_density_speed_limit(&mut self.world, &self.grid, &self.params.locomotion);
+        locomotion::apply_density_speed_limit(
+            &mut self.world,
+            &self.grid,
+            &self.walls,
+            &self.params.locomotion,
+        );
 
         // 4. Social forces, then walls.
         locomotion::compute_forces(
@@ -383,16 +385,22 @@ impl Sim {
         // energy — see `derive_velocity_from_positions`.
         locomotion::derive_velocity_from_positions(&mut self.world, &self.scratch, dt);
 
-        // 7. Safety net: the navmesh is the authority on where an agent may be.
+        // 7. Let anyone who crossed a doorway this tick leave.
+        //
+        //    This must run *before* the escape recovery below. Stepping through
+        //    a door means stepping off the mesh, and recovery cannot tell that
+        //    from a leak — it would drag the agent back inside, so nobody would
+        //    ever get out through the one route that works.
+        self.process_exits();
+
+        // 8. Safety net: the navmesh is the authority on where an agent may be.
         //    Wall projection alone cannot recover an agent that already escaped,
         //    because it pushes toward whichever side the agent is on. Anyone off
         //    the mesh is put back and counted — a non-zero count here means the
         //    physics is leaking and should be investigated, not tuned around.
         let escaped = self.recover_escaped();
 
-        // 8. Classify motion, then let anyone at a door leave.
         locomotion::update_blocked_state(&mut self.world, self.params.blocked_speed);
-        self.process_exits();
 
         // Derive time from the tick count rather than accumulating. Repeated
         // `time += dt` drifts — `0.05f32` is not exactly 0.05, and a 90-minute
@@ -503,23 +511,46 @@ impl Sim {
         n
     }
 
+    /// Retire anyone whose movement this tick crossed a doorway.
+    ///
+    /// # Why crossing, and not proximity
+    ///
+    /// This used to despawn any agent within `exit_radius` (0.6 m) of the door
+    /// segment. That is a capsule, not a doorway: it reached 0.6 m back into the
+    /// room and 0.6 m past each post, so a 1.0 m door absorbed people over a
+    /// 2.2 m front and did it *before* they reached the opening. No queue ever
+    /// formed, and throughput was set by how fast a crowd could walk up to the
+    /// capture region rather than by the width of the gap. Measured flow through
+    /// a 1 m door was 281 persons/m/min against a Green Guide figure of 82 — and
+    /// because every reported evacuation time inherited it, the error ran in the
+    /// dangerous direction: too fast, on a number a venue gets approved on.
+    ///
+    /// A door is a line you pass through. Testing the agent's path against the
+    /// span is exact, costs one segment intersection, and makes flow scale with
+    /// clear width the way measurement says it should.
     fn process_exits(&mut self) {
         if self.exits.is_empty() {
             return;
         }
-        let r = self.params.exit_radius as f64;
         let mut leaving: Vec<AgentId> = Vec::new();
 
         for i in 0..self.world.len() {
             if !self.world.active[i] {
                 continue;
             }
-            let p = Vec2::new(self.world.pos_x[i] as f64, self.world.pos_y[i] as f64);
-            let at_door = self
+            let Some(from) = self.scratch.previous_position(i) else {
+                continue;
+            };
+            let to = Vec2::new(self.world.pos_x[i] as f64, self.world.pos_y[i] as f64);
+            if from == to {
+                continue;
+            }
+            let motion = Segment::new(from, to);
+            if self
                 .exits
                 .iter()
-                .any(|e| e.segment().distance_to_point(p) <= r);
-            if at_door {
+                .any(|e| !motion.intersect(&e.segment()).is_none())
+            {
                 leaving.push(i as AgentId);
             }
         }
