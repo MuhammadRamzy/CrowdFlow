@@ -16,13 +16,21 @@
 
 import type { Opening, VenueDoc, Wall, Zone, ZoneKind } from '../schema/venue';
 
-export interface Command {
+/**
+ * A reversible change to a document.
+ *
+ * Generic in the document type because there is more than one: a venue is
+ * geometry, a scenario is who walks through it, and they version separately
+ * (`docs/02-data-model.md` §1). The discipline is identical for both, so the
+ * interface is shared rather than duplicated.
+ */
+export interface Command<T = VenueDoc> {
   /** Stable identifier, shown in the history and used for coalescing. */
   readonly kind: string;
   /** Human-readable, present tense: "Draw wall", not "Wall drawn". */
   readonly label: string;
-  apply(doc: VenueDoc): VenueDoc;
-  invert(): Command;
+  apply(doc: T): T;
+  invert(): Command<T>;
   /**
    * Commands sharing a coalesce key merge into one undo entry. A drag produces
    * dozens of moves and a user expects one undo to reverse the whole gesture.
@@ -370,19 +378,30 @@ const COALESCE_WINDOW_MS = 700;
  * an inverse command is a handful of bytes and states exactly what changed,
  * which is also what an audit trail needs.
  */
-export class History {
-  private undoStack: Command[] = [];
-  private redoStack: Command[] = [];
+export class History<T = VenueDoc> {
+  private undoStack: Command<T>[] = [];
+  private redoStack: Command<T>[] = [];
   private lastRunAt = 0;
 
   constructor(
-    private doc: VenueDoc,
+    private doc: T,
     /** Cap on retained entries. 200 is far more than a session needs. */
     private readonly limit = 200,
   ) {}
 
-  get document(): VenueDoc {
+  get document(): T {
     return this.doc;
+  }
+
+  /**
+   * How many entries deep the undo stack is.
+   *
+   * Exposed so a caller can tell a coalesced edit from a new one without the
+   * `run` method having to report it — `SessionHistory` uses this to keep two
+   * documents' undo stacks interleaved in the right order.
+   */
+  get depth(): number {
+    return this.undoStack.length;
   }
 
   get canUndo(): boolean {
@@ -409,7 +428,7 @@ export class History {
    * than stacking: dragging a width slider emits dozens of edits and a user
    * expects one undo to reverse the whole gesture, not thirty.
    */
-  run(cmd: Command): VenueDoc {
+  run(cmd: Command<T>): T {
     this.doc = cmd.apply(this.doc);
 
     const top = this.undoStack.at(-1);
@@ -434,7 +453,7 @@ export class History {
     return this.doc;
   }
 
-  undo(): VenueDoc {
+  undo(): T {
     const cmd = this.undoStack.pop();
     if (!cmd) return this.doc;
     this.doc = cmd.apply(this.doc);
@@ -442,7 +461,7 @@ export class History {
     return this.doc;
   }
 
-  redo(): VenueDoc {
+  redo(): T {
     const cmd = this.redoStack.pop();
     if (!cmd) return this.doc;
     this.doc = cmd.apply(this.doc);
@@ -451,9 +470,88 @@ export class History {
   }
 
   /** Replace the document and clear history — loading a different venue. */
-  reset(doc: VenueDoc): void {
+  reset(doc: T): void {
     this.doc = doc;
     this.undoStack = [];
     this.redoStack = [];
+  }
+}
+
+/** Which document an undo entry belongs to. */
+export type DocumentKind = 'venue' | 'scenario';
+
+/**
+ * The part of a `History` that `SessionHistory` needs.
+ *
+ * Structural rather than generic so histories over different document types
+ * can share one stack without the combined type having to name either.
+ */
+export interface UndoableHistory {
+  readonly depth: number;
+  readonly undoLabel: string | null;
+  undo(): unknown;
+  redo(): unknown;
+}
+
+/**
+ * One undo stack across two documents.
+ *
+ * A venue and a scenario version separately, so each keeps its own `History`.
+ * But a user has one ⌘Z, and it must reverse *the last thing they did* — not
+ * the last thing they did to whichever panel happens to be open. This keeps
+ * the interleaving: a list of which document each edit touched, in order.
+ *
+ * Coalesced edits are detected by watching the sub-history's depth rather than
+ * by asking it whether it merged. A drag that merges into the previous entry
+ * must not push a second entry here, or one undo would reverse the drag and the
+ * next would reverse nothing.
+ */
+export class SessionHistory {
+  private order: DocumentKind[] = [];
+  private redoOrder: DocumentKind[] = [];
+
+  constructor(private readonly histories: Record<DocumentKind, UndoableHistory>) {}
+
+  get canUndo(): boolean {
+    return this.order.length > 0;
+  }
+
+  get canRedo(): boolean {
+    return this.redoOrder.length > 0;
+  }
+
+  /** Label of the change undo would reverse, for a menu item or tooltip. */
+  get undoLabel(): string | null {
+    const which = this.order.at(-1);
+    return which ? this.histories[which].undoLabel : null;
+  }
+
+  /** Record that `which` history just ran a command, if it kept it. */
+  record(which: DocumentKind, depthBefore: number): void {
+    if (this.histories[which].depth <= depthBefore) return;
+    this.order.push(which);
+    this.redoOrder = [];
+  }
+
+  /** Undo the most recent edit to either document. Returns which one moved. */
+  undo(): DocumentKind | null {
+    const which = this.order.pop();
+    if (!which) return null;
+    this.histories[which].undo();
+    this.redoOrder.push(which);
+    return which;
+  }
+
+  redo(): DocumentKind | null {
+    const which = this.redoOrder.pop();
+    if (!which) return null;
+    this.histories[which].redo();
+    this.order.push(which);
+    return which;
+  }
+
+  clear(): void {
+    this.order = [];
+    this.redoOrder = [];
   }
 }

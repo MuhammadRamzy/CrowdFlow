@@ -18,7 +18,9 @@ import {
   ZoneTool,
 } from '../canvas/tools';
 import type { Point, Selection, ToolId } from '../canvas/tools';
-import { History, RemoveOpening, RemoveWall, RemoveZone } from '../doc/commands';
+import { SessionHistory, History, RemoveOpening, RemoveWall, RemoveZone } from '../doc/commands';
+import { defaultScenario } from '../doc/scenario';
+import type { ScenarioDoc } from '../schema/scenario';
 import type { VenueDoc } from '../schema/venue';
 import { engineVersion, loadEngine, Run, Venue } from '../engine';
 import { useApp } from '../state/store';
@@ -26,6 +28,7 @@ import { Inspector } from './Inspector';
 import { StatusBar } from './StatusBar';
 import { Timeline } from './Timeline';
 import { Validation } from './Validation';
+import { ScenarioPanel } from './ScenarioPanel';
 import { Report } from '../report/Report';
 import {
   IconDoor,
@@ -76,6 +79,12 @@ export function App() {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   const historyRef = useRef<History | null>(null);
+  const scenarioHistoryRef = useRef<History<ScenarioDoc> | null>(null);
+  const sessionRef = useRef<SessionHistory | null>(null);
+  // Mirrored into React state because the panel has to re-render when it
+  // changes; the ref is what the callbacks read.
+  const [scenario, setScenario] = useState<ScenarioDoc | null>(null);
+  const [scenarioNotes, setScenarioNotes] = useState<string[]>([]);
   const wallToolRef = useRef(new WallTool());
   const zoneToolRef = useRef(new ZoneTool());
   const doorToolRef = useRef(new DoorTool());
@@ -128,6 +137,10 @@ export function App() {
       if (!keepHistory) {
         const parsed = JSON.parse(json) as VenueDoc;
         historyRef.current = new History(parsed);
+        const scn = new History<ScenarioDoc>(defaultScenario(parsed, useApp.getState().requestedAgents));
+        scenarioHistoryRef.current = scn;
+        sessionRef.current = new SessionHistory({ venue: historyRef.current, scenario: scn });
+        setScenario(scn.document);
         setCanUndo(false);
         setCanRedo(false);
       }
@@ -185,11 +198,24 @@ export function App() {
     if (!venue || !venue.simulable) return;
 
     runRef.current?.free();
-    const run = venue.simulate(Date.now() % 1_000_000);
-    // Placement rejects candidates that would overlap an existing body, so
-    // fewer agents may be placed than requested. Report what was actually
-    // placed rather than what was asked for.
-    setPlacedAgents(run.spawn(requestedAgents));
+
+    // The scenario is the authority on who arrives and when. `spawn` remains
+    // for the no-scenario case, but a loaded venue always has one, so the
+    // panel's numbers and the run cannot drift apart.
+    const scn = scenarioHistoryRef.current?.document;
+    let run: Run;
+    if (scn) {
+      run = venue.runScenario(JSON.stringify(scn));
+      setPlacedAgents(run.scenarioTotal);
+      setScenarioNotes(run.scenarioNotes());
+    } else {
+      run = venue.simulate(Date.now() % 1_000_000);
+      // Placement rejects candidates that would overlap an existing body, so
+      // fewer agents may be placed than requested. Report what was actually
+      // placed rather than what was asked for.
+      setPlacedAgents(run.spawn(requestedAgents));
+      setScenarioNotes([]);
+    }
     runRef.current = run;
     setHasRun(true);
 
@@ -262,6 +288,23 @@ export function App() {
       recompile();
     },
     [recompile],
+  );
+
+  /** Apply a scenario command. Recompiling is unnecessary: geometry is
+   *  untouched, but the run is now stale, so it is discarded rather than left
+   *  showing results the panel no longer describes. */
+  const runScenarioCommand = useCallback(
+    (cmd: Parameters<History<ScenarioDoc>['run']>[0]) => {
+      const h = scenarioHistoryRef.current;
+      if (!h) return;
+      const before = h.depth;
+      h.run(cmd);
+      sessionRef.current?.record('scenario', before);
+      setScenario({ ...h.document });
+      setCanUndo(sessionRef.current?.canUndo ?? h.canUndo);
+      setCanRedo(sessionRef.current?.canRedo ?? h.canRedo);
+    },
+    [],
   );
 
   const undo = useCallback(() => {
@@ -571,6 +614,21 @@ export function App() {
             onDeleteSelection={deleteSelection}
             onEdit={runCommand}
           />
+          <ScenarioPanel
+            scenario={scenario}
+            venue={historyRef.current?.document ?? null}
+            onEdit={runScenarioCommand}
+          />
+          {scenarioNotes.length > 0 && (
+            <section className="panel">
+              <h2 className="panel-title">Not simulated</h2>
+              <ul className="notes">
+                {scenarioNotes.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            </section>
+          )}
           <Validation />
         </aside>
       </main>

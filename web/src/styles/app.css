@@ -686,3 +686,141 @@
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+/* --- scenario authoring ------------------------------------------------
+ * Same vocabulary as the rest of the inspector: rules rather than cards,
+ * uppercase micro-labels, tabular figures. A population is a disclosure row,
+ * not a panel of its own — a scenario with six populations should read as one
+ * list, not six competing boxes.
+ */
+
+.btn-wide {
+  width: 100%;
+  justify-content: center;
+  margin-top: var(--gap-2);
+}
+
+.pop {
+  border-top: 1px solid var(--line);
+}
+
+.pop:first-of-type {
+  border-top: 1px solid var(--line-strong);
+  margin-top: var(--gap-3);
+}
+
+.pop-head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  width: 100%;
+  padding: var(--gap-2) 0;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  color: var(--chalk);
+}
+
+.pop-head:hover {
+  color: var(--chalk-bright);
+}
+
+/* A disclosure marker drawn rather than typed: a glyph would depend on a font
+   that may not be installed, which is how the icon set came about. */
+.pop-caret {
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 120ms var(--ease);
+}
+
+.pop.is-open .pop-caret {
+  transform: rotate(90deg);
+}
+
+.pop-label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pop-count {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pop-body {
+  padding: 0 0 var(--gap-3) var(--gap-3);
+  border-left: 1px solid var(--line);
+  margin-left: 3px;
+}
+
+/* Mean and spread side by side: they are one quantity, and stacking them
+   invites reading the second as an unrelated field. */
+.field-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gap-2);
+}
+
+/* A segmented control, not radio buttons: the three arrival kinds are one
+   choice and belong in one enclosure. */
+.seg {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  margin-bottom: var(--gap-2);
+}
+
+.seg-btn {
+  padding: var(--gap-1) var(--gap-2);
+  background: var(--sunken);
+  border: 0;
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font-size: var(--t-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.seg-btn:last-child {
+  border-right: 0;
+}
+
+.seg-btn:hover {
+  color: var(--chalk);
+}
+
+.seg-btn.is-on {
+  background: var(--select-dim);
+  color: var(--chalk-bright);
+}
+
+.notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.notes li {
+  padding: var(--gap-1) 0 var(--gap-1) var(--gap-2);
+  border-left: 1px solid var(--supervise);
+  margin-bottom: var(--gap-1);
+  color: var(--muted);
+  font-size: var(--t-small);
+}
+
+.row-value.is-alarm,
+.row-note.is-alarm {
+  color: var(--alarm);
+}
