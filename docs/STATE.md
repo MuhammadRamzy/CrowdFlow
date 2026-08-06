@@ -101,7 +101,8 @@ constant doing both jobs badly at one end.
 
 Ranked, what is left:
 
-1. **The repulsion/density split above.** The only remaining calibration gap.
+1. **Split body radius from personal-space radius** (ADR 0006). The only
+   remaining calibration gap, and the approach most likely to close it.
 
 2. **Multi-floor navigation.** Stairs now slow people down (`Zone::
    speed_multiplier` reaches the mesh), but `Sim` still holds one flat
