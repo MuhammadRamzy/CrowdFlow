@@ -466,17 +466,11 @@ mod tests {
         );
     }
 
-    /// **Still failing, and left that way deliberately.**
-    ///
     /// Specific flow is per metre of clear width, so it should be roughly
-    /// width-independent. It is not: 0.9 m gives 47 p/m/min and 1.8 m gives 93,
-    /// a factor of 1.96. Narrow doors are under-served, which is the *safe*
-    /// direction (pessimistic egress) but still wrong — a 0.9 m door is the
-    /// common case in a real venue. The likely cause is that a single-file
-    /// opening barely wider than two bodies is dominated by wall repulsion and
-    /// the arch that forms in front of it.
+    /// width-independent. It was not — 5.45x between a 0.9 m and a 1.8 m door
+    /// — because a narrow opening jammed and a wide one did not. Directional
+    /// density sensing fixed the jam and with it the width dependence.
     #[test]
-    #[ignore = "specific flow is not width-independent: 1.96x between 0.9 m and 1.8 m; see docs/06-validation.md"]
     fn flow_scales_with_doorway_width() {
         let narrow = measure_doorway_flow(0.9, 150, LocomotionParams::default());
         let wide = measure_doorway_flow(1.8, 250, LocomotionParams::default());

@@ -368,7 +368,6 @@ fn corner_corridor(leg: f64, width: f64) -> (Vec<Vec2>, NavMesh, Vec<ExitSpan>) 
 /// because soft wall repulsion was observed to lose agents at corners under
 /// load, and a corner under load is exactly this test.
 #[test]
-#[ignore = "agents deadlock at a corner: 13 of 20 never clear it in 150 s; see docs/06-validation.md"]
 fn tc3_twenty_people_round_a_corner_without_leaving_the_corridor() {
     let (_pts, m, exits) = corner_corridor(20.0, 2.0);
     let mut sim = Sim::new(m, exits, SimParams::default(), 20260803);
@@ -493,7 +492,6 @@ fn tc4_the_reference_curve_is_the_published_one() {
 /// geometrically impossible and any reordering means bodies passed *through*
 /// each other. That makes this a contact-solver test as much as a corner test.
 #[test]
-#[ignore = "agents deadlock at a corner: 3 of 10 never clear it; see docs/06-validation.md"]
 fn tc6_a_single_file_column_rounds_a_corner_without_overtaking() {
     let (_pts, m, exits) = corner_corridor(20.0, 0.8);
     let mut sim = Sim::new(m, exits, SimParams::default(), 20260803);
@@ -1001,7 +999,6 @@ fn exits_of(pts: &[Vec2], doors: &[(usize, usize)]) -> Vec<ExitSpan> {
 /// arm drain completely before the other starts is the failure mode worth
 /// catching; a 55/45 split is not.
 #[test]
-#[ignore = "merge deadlocks: 32 of 40 never reach the exit; see docs/06-validation.md"]
 fn tc12_two_streams_merge_without_starving_either_branch() {
     let pts = vec![
         Vec2::new(0.0, 6.0),

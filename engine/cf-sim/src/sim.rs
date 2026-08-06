@@ -83,6 +83,8 @@ impl Default for SimParams {
 struct Route {
     points: Vec<Vec2>,
     next: usize,
+    /// Where this route was planned to, so it can be planned again.
+    goal: Vec2,
 }
 
 impl Route {
@@ -120,6 +122,8 @@ pub struct Sim {
     walls: Vec<Segment>,
     exits: Vec<ExitSpan>,
     routes: Vec<Route>,
+    /// Consecutive ticks each agent has wanted to move and failed to.
+    stuck_ticks: Vec<u16>,
     /// Diagnostics from the most recent tick only.
     last_solve: SolveDiagnostics,
     density: DensityGrid,
@@ -151,6 +155,7 @@ impl Sim {
             walls: Vec::new(),
             exits: Vec::new(),
             routes: Vec::new(),
+            stuck_ticks: Vec::new(),
             last_solve: SolveDiagnostics::default(),
             density: DensityGrid::new(bounds, 0.5),
             density_interval: 4,
@@ -189,6 +194,7 @@ impl Sim {
             walls,
             exits,
             routes: Vec::new(),
+            stuck_ticks: Vec::new(),
             last_solve: SolveDiagnostics::default(),
             density: DensityGrid::new(bounds, 0.5),
             density_interval: 4,
@@ -243,11 +249,22 @@ impl Sim {
     /// Spawn an agent and immediately plan its route to `goal`.
     pub fn spawn(&mut self, params: crate::world::SpawnParams, goal: Vec2) -> AgentId {
         let id = self.world.spawn(params);
-        let route = self.plan(params.position, goal);
+        let route = self.plan(params.position, goal, params.radius_m as f64);
         // Slots are never reused, so routes grow in lockstep with agents.
         debug_assert_eq!(self.routes.len(), id as usize);
         self.routes.push(route);
+        self.stuck_ticks.push(0);
         id
+    }
+
+    /// An agent's planned route, and which waypoint it is steering toward.
+    ///
+    /// Exposed for diagnostics and for drawing paths in the editor: when an
+    /// agent misbehaves, the first question is always "where does it think it
+    /// is going", and inferring that from positions alone is guesswork.
+    pub fn route_of(&self, id: AgentId) -> (&[Vec2], usize) {
+        let r = &self.routes[id as usize];
+        (&r.points, r.next)
     }
 
     /// Recompute the density field now, without stepping.
@@ -271,6 +288,7 @@ impl Sim {
             None => {
                 let id = self.world.spawn(params);
                 self.routes.push(Route::default());
+                self.stuck_ticks.push(0);
                 id
             }
         }
@@ -311,15 +329,71 @@ impl Sim {
         }
     }
 
-    fn plan(&self, from: Vec2, goal: Vec2) -> Route {
-        let points = match &self.mesh {
+    /// Nudge interior waypoints off the corners they sit on.
+    ///
+    /// The funnel returns the tautest path, which means its waypoints are the
+    /// obstacle vertices themselves. A body of radius r cannot stand on a
+    /// vertex, so an agent steering at one drives into the corner until contact
+    /// resolution stops it, and if the wall it is pressing into runs the way it
+    /// wants to go, it never gets round: RiMEA TC3 and TC6 each wedged an agent
+    /// at the same apex on every run.
+    ///
+    /// Each interior waypoint moves along the bisector of its two legs, which
+    /// points into the free space away from the corner. `√2 · r` is what a right
+    /// angle needs to clear both walls, and right angles are what buildings are
+    /// made of; anything sharper is under-corrected rather than over. A nudge
+    /// that would leave the mesh is dropped, so a corridor too narrow to ease
+    /// through keeps the taut path instead of being handed an unreachable goal.
+    fn ease_corners(&self, points: &mut [Vec2], radius: f64) {
+        let Some(mesh) = &self.mesh else {
+            return;
+        };
+        if points.len() < 3 || radius <= 0.0 {
+            return;
+        }
+        let offset = radius * std::f64::consts::SQRT_2;
+
+        for k in 1..points.len() - 1 {
+            let wp = points[k];
+            let u = points[k - 1] - wp;
+            let v = points[k + 1] - wp;
+            let (ul, vl) = (u.length(), v.length());
+            if ul <= 1e-9 || vl <= 1e-9 {
+                continue;
+            }
+            // `u + v` bisects the narrow angle between the two legs. The funnel
+            // pulls a path taut *around* an obstacle, so that narrow side is the
+            // obstacle — stepping along it walks into the wall. Free space is
+            // the other way.
+            let inward = u * (1.0 / ul) + v * (1.0 / vl);
+            let bl = inward.length();
+            // Collinear: no corner to ease.
+            if bl <= 1e-6 {
+                continue;
+            }
+            let eased = wp - inward * (offset / bl);
+            if mesh.locate(eased).is_some() {
+                points[k] = eased;
+            }
+        }
+    }
+
+    fn plan(&self, from: Vec2, goal: Vec2, radius: f64) -> Route {
+        let mut points = match &self.mesh {
             Some(m) => m.find_path(from, goal).unwrap_or_else(|| vec![goal]),
             None => vec![goal],
         };
+        // The funnel can emit the same corner twice. A duplicate is not merely
+        // redundant: `steer` advances past every waypoint already reached, so
+        // two coincident points are consumed in a single tick, and an agent
+        // 0.6 m short of a corner skipped the whole turn and aimed at the exit
+        // through a wall.
+        points.dedup_by(|a, b| a.distance(*b) < 1e-6);
+        self.ease_corners(&mut points, radius);
         // A pathfound route starts at the agent's own position, so skip it.
         // The single-point fallback *is* the goal, so do not.
         let next = usize::from(points.len() > 1);
-        Route { points, next }
+        Route { points, next, goal }
     }
 
     /// Advance one tick.
@@ -401,6 +475,7 @@ impl Sim {
         let escaped = self.recover_escaped();
 
         locomotion::update_blocked_state(&mut self.world, self.params.blocked_speed);
+        self.replan_the_stuck();
 
         // Derive time from the tick count rather than accumulating. Repeated
         // `time += dt` drifts — `0.05f32` is not exactly 0.05, and a 90-minute
@@ -432,6 +507,45 @@ impl Sim {
             n += 1;
         }
         n
+    }
+
+    /// Give up on a route that is not working and plan a fresh one.
+    ///
+    /// Waypoint advance is monotonic, which is fine until a crowd shoves an
+    /// agent *backwards* past a corner it had already turned. It is then aiming
+    /// at a waypoint it can no longer reach in a straight line, walks into the
+    /// wall between them, and stays there: the route says go north, the wall
+    /// says no, and nothing in the loop ever revisits the decision. RiMEA TC3
+    /// left one agent wedged in exactly this way, in the same spot every run.
+    ///
+    /// Two seconds of wanting to move and not moving is the trigger. That is
+    /// long enough not to fire on ordinary queueing — where agents are blocked
+    /// constantly and correctly — and short enough that a genuinely stuck agent
+    /// recovers rather than standing there for the rest of the run.
+    fn replan_the_stuck(&mut self) {
+        const GIVE_UP_TICKS: u16 = 40;
+
+        for i in 0..self.world.len() {
+            if !self.world.active[i] {
+                continue;
+            }
+            if self.world.state[i] != AgentState::Blocked {
+                self.stuck_ticks[i] = 0;
+                continue;
+            }
+            self.stuck_ticks[i] += 1;
+            if self.stuck_ticks[i] < GIVE_UP_TICKS {
+                continue;
+            }
+            self.stuck_ticks[i] = 0;
+
+            let from = Vec2::new(self.world.pos_x[i] as f64, self.world.pos_y[i] as f64);
+            let goal = self.routes[i].goal;
+            if goal == Vec2::ZERO && self.routes[i].points.is_empty() {
+                continue;
+            }
+            self.routes[i] = self.plan(from, goal, self.world.radius[i] as f64);
+        }
     }
 
     fn steer(&mut self) {
