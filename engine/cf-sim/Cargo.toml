@@ -12,3 +12,13 @@ repository.workspace = true
 # Keeping serde out of this tree is the reason cf-geom's serde is a feature.
 cf-geom.workspace = true
 cf-navmesh.workspace = true
+
+[dev-dependencies]
+# Tests only, and deliberately not a real dependency: cf-sim must stay ignorant
+# of documents. The RiMEA suite needs it because RiMEA TC7 is about a
+# population reproducing its *specified* distribution, and the specification
+# lives in cf-schema. Testing `Distribution::sample_icdf` composed with
+# `Rng::uniform01` is testing the exact pairing cf-wasm spawns agents with,
+# rather than a reimplementation of it. cf-schema does not depend on cf-sim, so
+# this adds no cycle.
+cf-schema.workspace = true
