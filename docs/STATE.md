@@ -42,6 +42,9 @@ The frontend is real and drives the real engine — nothing on screen is mocked.
 - **Drawn SVG icon set** replacing Unicode glyphs (which fell back to
   missing-glyph boxes on Linux).
 - **`cf_sim::calibration`** — doorway-flow and speed–density harnesses.
+- **Terrain speed** — a zone with a `speed_multiplier` slows the people
+  crossing it. Free on a venue that has none: `NavMesh::uniform_speed` is
+  settled at build time and short-circuits the whole pass.
 - **Scenario authoring** — populations, walking-speed and body-radius
   distributions, entry doors, arrival profile (instant / steady / editable
   curve) and goal. Every control reaches the engine: a run is started from the
@@ -67,11 +70,10 @@ is capable of satisfying, satisfies.
 | Speed at ρ = 2.0 /m² | 0.47 m/s | 0.61 (Weidmann) | −23% |
 | Speed at ρ = 3.0 /m² | 0.04 m/s | 0.33 (Weidmann) | −89% |
 
-RiMEA TC1, TC3, TC4(curve), TC6, TC7 ×2, TC8 ×2, TC11 ×2, TC12 all pass.
+RiMEA TC1, TC2, TC3, TC4(curve), TC6, TC7 ×2, TC8 ×2, TC11 ×2, TC12 all pass.
 
-Still ignored, all three honestly:
+Only two things are ignored, and one is not a test:
 
-- **TC2 stairs** — an unimplemented feature, see item 2 below.
 - **TC4 fundamental diagram** — the trade-off below.
 - **`sweep_agent_repulsion`** — a tool for re-tuning, not an assertion.
 
@@ -99,21 +101,27 @@ constant doing both jobs badly at one end.
 
 Ranked, what is left:
 
-1. **Stairs** (RiMEA TC2). `cf_schema::venue::VerticalLink` already carries
-   `speed_multiplier_up/_down`, `riser_m` and `going_m`, and `Zone` carries
-   `speed_multiplier` — none of it reaches `cf-sim`, which holds one flat
-   `NavMesh` with no zone identity. A per-triangle speed multiplier applied in
-   `Sim::steer` unlocks TC2 on its own, without multi-floor navigation.
+1. **The repulsion/density split above.** The only remaining calibration gap.
 
-2. **The repulsion/density split above.**
+2. **Multi-floor navigation.** Stairs now slow people down (`Zone::
+   speed_multiplier` reaches the mesh), but `Sim` still holds one flat
+   `NavMesh` with no floor identity, so an agent cannot traverse a
+   `VerticalLink` between two floors. `docs/06-validation.md` §3 "Vertical
+   circulation" needs this; RiMEA TC2 did not.
 
-3. **Flow fields** to replace per-agent A*. This matters more than it did:
+3. **Zone-aware meshing.** A zone applies its speed multiplier to triangles
+   whose centroid it contains, so a zone smaller than the local triangles takes
+   none of them and raises `ZoneSpeedNotApplied`. Inserting zone boundary
+   vertices as Steiner points during triangulation would fix it. Note they must
+   *not* become constraints — a constraint is a wall in this codebase.
+
+4. **Flow fields** to replace per-agent A*. This matters more than it did:
    `reconsider_exits` issues a path query per exit per reconsideration.
 
-4. **Floorplan import** — `services/` exists only as an unverified sketch on a
+5. **Floorplan import** — `services/` exists only as an unverified sketch on a
    branch. Nothing has ever compiled or linted it.
 
-5. Multi-select and marquee; scenario events (a door closing mid-run) — the
+6. Multi-select and marquee; scenario events (a door closing mid-run) — the
    schema has `events` and the engine ignores them.
 
 ### Parallel work parked on branches
