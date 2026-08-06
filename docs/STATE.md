@@ -8,11 +8,14 @@
 
 ## Right now
 
-**Phase:** B2 — locomotion. Engine and editor both work end to end; the model is
-**not calibrated**, which is the top open item.
-**Last updated:** 2026-07-30 by Ramzy's session
-**Tree status:** green — 219 tests passing, 3 deliberately ignored (see below),
-clippy clean, wasm32 builds, web typecheck and production build clean.
+**Phase:** B2 — locomotion, essentially complete. Engine and editor work end to
+end, the model meets its headline benchmark (82.1 p/m/min through a 1 m door
+against the Green Guide's 82), and the whole RiMEA suite runs. One calibration
+gap remains; see "Next up".
+**Last updated:** 2026-08-06 by Ramzy's session
+**Tree status:** green — 246 tests passing, 2 ignored, and one of those two is a
+diagnostic tool rather than a test. clippy clean, wasm32 builds, web typecheck
+and production build clean.
 
 ### How to run it
 
@@ -55,8 +58,8 @@ The frontend is real and drives the real engine — nothing on screen is mocked.
 
 ### Next up — pick from the top
 
-The engine is in good shape. **233 tests passing, 3 ignored** — and of those
-three, one is a diagnostic tool rather than a test. Every RiMEA case the engine
+The engine is in good shape. **246 tests passing, 2 ignored** — and one of those
+two is a diagnostic tool rather than a test. Every RiMEA case the engine
 is capable of satisfying, satisfies.
 
     cargo test -p cf-sim calibration -- --ignored --nocapture
