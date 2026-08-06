@@ -52,6 +52,7 @@ version = "0.1.0"
 dependencies = [
  "cf-geom",
  "cf-navmesh",
+ "cf-schema",
 ]
 
 [[package]]
