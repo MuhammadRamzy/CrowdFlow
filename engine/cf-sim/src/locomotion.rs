@@ -52,11 +52,20 @@ pub struct LocomotionParams {
     /// Relaxation time for the driving force, seconds. How quickly an agent
     /// accelerates toward its desired velocity.
     pub tau: f32,
-    /// Repulsion magnitude between agents, newtons.
+    /// Repulsion magnitude between agents, **m/s²**.
+    ///
+    /// Helbing quotes A = 2000 N. This model works in accelerations — the
+    /// driving term is `(v_desired − v)/τ` — so the published figure must be
+    /// divided by body mass before it can be used here. It was not, and a
+    /// factor of ~80 kg turned neighbour repulsion into a 9 g shove: at 2 p/m²
+    /// the crowd stopped dead (0.00 m/s of transport) and boiled sideways at
+    /// 1.18 m/s, while a mean-|v| diagnostic reported that jitter as *speed*.
     pub a_agent: f32,
     /// Repulsion falloff distance between agents, metres.
     pub b_agent: f32,
-    /// Repulsion magnitude from walls, newtons.
+    /// Repulsion magnitude from walls, **m/s²**. Same unit correction as
+    /// `a_agent`; walls are also a hard projected constraint, so this only has
+    /// to discourage grazing, not to be the thing that stops anyone.
     pub a_wall: f32,
     /// Repulsion falloff distance from walls, metres.
     pub b_wall: f32,
@@ -91,9 +100,10 @@ impl Default for LocomotionParams {
     fn default() -> Self {
         Self {
             tau: 0.5,
-            a_agent: 2000.0,
+            // Helbing's 2000 N over an ~80 kg body.
+            a_agent: 25.0,
             b_agent: 0.08,
-            a_wall: 2000.0,
+            a_wall: 25.0,
             b_wall: 0.08,
             lambda: 0.75,
             interaction_range: 2.0,

@@ -525,9 +525,16 @@ impl Sim {
     /// because every reported evacuation time inherited it, the error ran in the
     /// dangerous direction: too fast, on a number a venue gets approved on.
     ///
-    /// A door is a line you pass through. Testing the agent's path against the
-    /// span is exact, costs one segment intersection, and makes flow scale with
-    /// clear width the way measurement says it should.
+    /// A door is a line you pass through. So the test is whether the capsule
+    /// swept by the agent's *body* this tick reaches the opening, which makes
+    /// flow scale with clear width the way measurement says it should.
+    ///
+    /// The capture distance is the agent's own radius — anatomy, not a tuning
+    /// knob, and a quarter of the 0.6 m it replaced. Testing the centre point
+    /// alone is not enough: an agent whose goal *is* the doorway decelerates as
+    /// it arrives and can stop a few centimetres short forever. A dense crowd
+    /// shoves it through, so the doorway harness never saw this, but RiMEA TC3,
+    /// TC6, TC8 and TC12 all deadlocked with nobody leaving at all.
     fn process_exits(&mut self) {
         if self.exits.is_empty() {
             return;
@@ -538,18 +545,18 @@ impl Sim {
             if !self.world.active[i] {
                 continue;
             }
-            let Some(from) = self.scratch.previous_position(i) else {
-                continue;
-            };
             let to = Vec2::new(self.world.pos_x[i] as f64, self.world.pos_y[i] as f64);
-            if from == to {
-                continue;
-            }
-            let motion = Segment::new(from, to);
+            let from = self.scratch.previous_position(i).unwrap_or(to);
+
+            // The body sweeps a capsule from `from` to `to`. It has passed the
+            // door once that capsule touches the opening — which is what a
+            // person passing through a door physically does.
+            let swept = Segment::new(from, to);
+            let r = self.world.radius[i] as f64;
             if self
                 .exits
                 .iter()
-                .any(|e| !motion.intersect(&e.segment()).is_none())
+                .any(|e| cf_geom::segment_distance(&swept, &e.segment()) <= r)
             {
                 leaving.push(i as AgentId);
             }
