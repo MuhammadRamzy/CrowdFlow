@@ -276,15 +276,17 @@ export function App() {
     const h = historyRef.current;
     if (!h) return;
     compile(JSON.stringify(h.document), venueTitle, true);
-    setCanUndo(h.canUndo);
-    setCanRedo(h.canRedo);
+    setCanUndo(sessionRef.current?.canUndo ?? h.canUndo);
+    setCanRedo(sessionRef.current?.canRedo ?? h.canRedo);
   }, [compile, venueTitle]);
 
   const runCommand = useCallback(
     (cmd: Parameters<History['run']>[0]) => {
       const h = historyRef.current;
       if (!h) return;
+      const before = h.depth;
       h.run(cmd);
+      sessionRef.current?.record('venue', before);
       recompile();
     },
     [recompile],
@@ -307,18 +309,36 @@ export function App() {
     [],
   );
 
+  // Undo spans both documents. `SessionHistory` remembers which one each edit
+  // touched, so the order the user made changes in is the order they come
+  // back — two separate stacks would undo a wall when the last thing they did
+  // was change a population.
   const undo = useCallback(() => {
-    const h = historyRef.current;
-    if (!h?.canUndo) return;
-    h.undo();
-    recompile();
+    const session = sessionRef.current;
+    if (!session?.canUndo) return;
+    const which = session.undo();
+    if (which === 'scenario') {
+      const d = scenarioHistoryRef.current?.document;
+      if (d) setScenario({ ...d });
+      setCanUndo(session.canUndo);
+      setCanRedo(session.canRedo);
+    } else {
+      recompile();
+    }
   }, [recompile]);
 
   const redo = useCallback(() => {
-    const h = historyRef.current;
-    if (!h?.canRedo) return;
-    h.redo();
-    recompile();
+    const session = sessionRef.current;
+    if (!session?.canRedo) return;
+    const which = session.redo();
+    if (which === 'scenario') {
+      const d = scenarioHistoryRef.current?.document;
+      if (d) setScenario({ ...d });
+      setCanUndo(session.canUndo);
+      setCanRedo(session.canRedo);
+    } else {
+      recompile();
+    }
   }, [recompile]);
 
   // Canvas input. The renderer forwards world-space pointer events while a tool
