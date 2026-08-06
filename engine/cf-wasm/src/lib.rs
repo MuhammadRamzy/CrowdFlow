@@ -18,11 +18,14 @@
 //! the standard wasm-bindgen caveat and it is the reason the API hands out a
 //! fresh view each frame instead of caching one.
 
+mod scenario;
+
 use cf_compile::{compile, CompileWarning, NavGraph};
 use cf_geom::Vec2;
-use cf_schema::VenueDoc;
+use cf_schema::{ScenarioDoc, VenueDoc};
 use cf_sim::world::{AgentState, SpawnParams};
 use cf_sim::{ExitSpan, Sim, SimParams};
+use scenario::ScenarioRunner;
 use wasm_bindgen::prelude::*;
 
 /// Persons/m² mapped to a density byte of 255.
@@ -55,9 +58,16 @@ pub fn engine_version() -> String {
 // ---------------------------------------------------------------------------
 
 /// A compiled venue: mesh, walls, doors and diagnostics.
+///
+/// The source document is kept alongside the compiled graph. Scenario
+/// authoring needs it: zone polygons and routing waypoints are destinations an
+/// agent can be sent to, and the `NavGraph` deliberately does not carry either
+/// — it is geometry for walking on, not a record of what the author called
+/// things.
 #[wasm_bindgen]
 pub struct CompiledVenue {
     graph: NavGraph,
+    doc: VenueDoc,
 }
 
 #[wasm_bindgen]
@@ -74,6 +84,7 @@ impl CompiledVenue {
             .map_err(|e| JsError::new(&format!("venue document is not valid: {e}")))?;
         Ok(CompiledVenue {
             graph: compile(&doc),
+            doc,
         })
     }
 
@@ -217,6 +228,9 @@ pub struct Simulation {
     /// Reused so reading positions does not allocate every frame.
     xy: Vec<f32>,
     states: Vec<u8>,
+    /// Present only for a scenario-driven run. `None` means the caller is
+    /// placing agents itself through [`Simulation::spawn_scattered`].
+    runner: Option<ScenarioRunner>,
 }
 
 #[wasm_bindgen]
@@ -244,7 +258,129 @@ impl Simulation {
             sim: Sim::new(f.mesh.clone(), exits, SimParams::default(), seed as u64),
             xy: Vec::new(),
             states: Vec::new(),
+            runner: None,
         })
+    }
+
+    /// Build a simulation driven by an authored scenario document.
+    ///
+    /// Unlike [`Simulation::new`], agents are **not** placed up front. They
+    /// arrive over time according to each population's arrival curve, entering
+    /// through the doorways the scenario names, carrying body radii and walking
+    /// speeds drawn from its distributions. Call [`Simulation::step`] and they
+    /// appear as their time comes.
+    ///
+    /// # Entrances are not exits
+    ///
+    /// Any doorway a population arrives through is removed from the exit set.
+    /// Otherwise an agent placed just inside its own entrance would be counted
+    /// as having left through it on the first tick, and a scenario with an
+    /// arrival curve would simulate an empty room. A door that no population
+    /// enters by remains an exit. If every door is an entrance the exit set
+    /// would be empty, so in that case they all stay exits and the caller is
+    /// told through [`Simulation::scenario_notes`].
+    #[wasm_bindgen(js_name = fromScenario)]
+    pub fn from_scenario(
+        venue: &CompiledVenue,
+        floor: usize,
+        scenario_json: &str,
+    ) -> Result<Simulation, JsError> {
+        let f = venue
+            .graph
+            .floors
+            .get(floor)
+            .ok_or_else(|| JsError::new("floor index out of range"))?;
+        let doc: ScenarioDoc = serde_json::from_str(scenario_json)
+            .map_err(|e| JsError::new(&format!("scenario document is not valid: {e}")))?;
+
+        let mut runner = ScenarioRunner::plan(&doc, &venue.doc, f);
+        let entries = runner.entry_doors().to_vec();
+
+        let mut exits: Vec<ExitSpan> = f
+            .doors
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !entries.contains(i))
+            .map(|(_, d)| ExitSpan { a: d.a, b: d.b })
+            .collect();
+        if exits.is_empty() && !f.doors.is_empty() {
+            runner.push_note(
+                "Every doorway is an entrance, so there is nowhere to leave by. All doors are \
+                 being treated as exits as well, which will delete arrivals as they appear."
+                    .to_string(),
+            );
+            exits = f
+                .doors
+                .iter()
+                .map(|d| ExitSpan { a: d.a, b: d.b })
+                .collect();
+        }
+
+        // A timestep outside this range is a typo, not an intent: below 10 ms
+        // the contact solve costs more than it buys, above 100 ms it stops
+        // converging. Clamp rather than refuse, and let the caller read back
+        // what was used through `timestep`.
+        let dt = if doc.timestep_s.is_finite() {
+            doc.timestep_s.clamp(0.01, 0.10)
+        } else {
+            SimParams::default().dt
+        };
+        let params = SimParams {
+            dt,
+            ..SimParams::default()
+        };
+
+        let mut out = Simulation {
+            sim: Sim::new(f.mesh.clone(), exits, params, doc.seed),
+            xy: Vec::new(),
+            states: Vec::new(),
+            runner: Some(runner),
+        };
+        // Anyone due at t = 0 — a preplaced crowd — is on the floor before the
+        // first tick, so the venue is not briefly and misleadingly empty.
+        out.admit_arrivals();
+        Ok(out)
+    }
+
+    /// Place everyone whose arrival time has come.
+    fn admit_arrivals(&mut self) {
+        let now = self.sim.world.time;
+        if let Some(r) = self.runner.as_mut() {
+            r.pump(&mut self.sim, now);
+        }
+    }
+
+    /// Agents the scenario has authored but not yet admitted.
+    ///
+    /// A run is finished when this and the active count are both zero — an
+    /// arrival curve means an empty venue at t = 0 is the *start*, not the end.
+    #[wasm_bindgen(js_name = pendingCount)]
+    pub fn pending_count(&self) -> u32 {
+        self.runner.as_ref().map(|r| r.pending()).unwrap_or(0)
+    }
+
+    /// Agents abandoned because their entrance never cleared.
+    #[wasm_bindgen(js_name = unplacedCount)]
+    pub fn unplaced_count(&self) -> u32 {
+        self.runner.as_ref().map(|r| r.unplaced()).unwrap_or(0)
+    }
+
+    /// Total agents the scenario asks for, across all populations.
+    #[wasm_bindgen(js_name = scenarioTotal)]
+    pub fn scenario_total(&self) -> u32 {
+        self.runner.as_ref().map(|r| r.total()).unwrap_or(0)
+    }
+
+    /// Everything in the scenario document this engine could not act on, in
+    /// prose, as a JSON array of strings.
+    ///
+    /// The authoring panel shows this verbatim. A scenario field that is stored
+    /// and round-tripped but not simulated has to say so somewhere, or the
+    /// control that edits it is a lie.
+    #[wasm_bindgen(js_name = scenarioNotes)]
+    pub fn scenario_notes(&self) -> Result<JsValue, JsError> {
+        let notes: &[String] = self.runner.as_ref().map(|r| r.notes()).unwrap_or(&[]);
+        serde_wasm_bindgen::to_value(notes).map_err(|e| JsError::new(&e.to_string()))
     }
 
     /// Scatter `count` agents across the walkable floor, each routed to its
@@ -451,7 +587,11 @@ impl Simulation {
     }
 
     /// Advance one physics tick.
+    ///
+    /// Arrivals are admitted *before* the physics, so an agent that arrives on
+    /// this tick is steered on this tick rather than standing still for one.
     pub fn step(&mut self) {
+        self.admit_arrivals();
         self.sim.step();
     }
 
@@ -459,7 +599,7 @@ impl Simulation {
     #[wasm_bindgen(js_name = stepMany)]
     pub fn step_many(&mut self, n: u32) {
         for _ in 0..n {
-            self.sim.step();
+            self.step();
         }
     }
 
@@ -518,6 +658,13 @@ impl Simulation {
     /// drift over a long run.
     pub fn time(&self) -> f64 {
         self.sim.world.time
+    }
+
+    /// Physics timestep actually in use, in seconds. A scenario may ask for a
+    /// different one from the default, and the playback clock has to agree with
+    /// the engine about how much time a tick is worth.
+    pub fn timestep(&self) -> f64 {
+        self.sim.params.dt
     }
 
     pub fn tick(&self) -> f64 {

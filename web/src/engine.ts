@@ -140,6 +140,21 @@ export class Venue {
     return new Run(new Simulation(this.inner, 0, seed));
   }
 
+  /**
+   * Start a run driven by an authored scenario.
+   *
+   * Nobody is placed up front. Agents arrive over time along each population's
+   * arrival curve, through the doorways the scenario names, with body radii and
+   * walking speeds drawn from its distributions. Read `notes` afterwards: it
+   * lists anything in the document the engine could not act on.
+   */
+  runScenario(scenarioJson: string): Run {
+    if (!this.simulable) {
+      throw new Error('venue has fatal warnings and cannot be simulated');
+    }
+    return new Run(Simulation.fromScenario(this.inner, 0, scenarioJson));
+  }
+
   free(): void {
     this.inner.free();
   }
@@ -195,6 +210,46 @@ export class Run {
   /** Simulated seconds elapsed. */
   get time(): number {
     return this.inner.time();
+  }
+
+  /**
+   * Physics timestep in seconds. A scenario may specify its own, and the
+   * playback clock has to agree with the engine about what a tick is worth.
+   */
+  get timestep(): number {
+    return this.inner.timestep();
+  }
+
+  /**
+   * Agents the scenario has authored but not yet admitted.
+   *
+   * Zero for a scattered placement. For a scenario run this is what makes an
+   * empty venue at t=0 the *start* rather than the end: a run is over when this
+   * and `active` are both zero.
+   */
+  get pending(): number {
+    return this.inner.pendingCount();
+  }
+
+  /** Agents abandoned because their entrance never cleared. */
+  get unplaced(): number {
+    return this.inner.unplacedCount();
+  }
+
+  /** Everyone the scenario asks for, across all populations. */
+  get scenarioTotal(): number {
+    return this.inner.scenarioTotal();
+  }
+
+  /**
+   * Everything in the scenario document this engine could not act on.
+   *
+   * Shown verbatim in the authoring panel. A field that is stored and
+   * round-tripped but not simulated has to say so, or the control that edits it
+   * is a lie.
+   */
+  scenarioNotes(): string[] {
+    return this.inner.scenarioNotes() as string[];
   }
 
   stats(): SimStats {
