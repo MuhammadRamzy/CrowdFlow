@@ -42,6 +42,13 @@ The frontend is real and drives the real engine — nothing on screen is mocked.
 - **Drawn SVG icon set** replacing Unicode glyphs (which fell back to
   missing-glyph boxes on Linux).
 - **`cf_sim::calibration`** — doorway-flow and speed–density harnesses.
+- **Scenario authoring** — populations, walking-speed and body-radius
+  distributions, entry doors, arrival profile (instant / steady / editable
+  curve) and goal. Every control reaches the engine: a run is started from the
+  authored scenario, so agents arrive over time rather than all at t=0.
+  Anything the document stores that the engine cannot act on is listed verbatim
+  under "Not simulated" — a control that edits an ignored field is a lie.
+  Undo interleaves venue and scenario edits through `SessionHistory`.
 
 ### Next up — pick from the top
 
@@ -92,23 +99,22 @@ constant doing both jobs badly at one end.
 
 Ranked, what is left:
 
-1. **Scenario authoring UI** — populations, arrival curves, entries, goals.
-   This is the biggest gap between what the engine can do and what the app can
-   express, and it is the demo-relevant one. Foundation exists on a branch, see
-   below.
-
-2. **Stairs** (RiMEA TC2). `cf_schema::venue::VerticalLink` already carries
+1. **Stairs** (RiMEA TC2). `cf_schema::venue::VerticalLink` already carries
    `speed_multiplier_up/_down`, `riser_m` and `going_m`, and `Zone` carries
    `speed_multiplier` — none of it reaches `cf-sim`, which holds one flat
    `NavMesh` with no zone identity. A per-triangle speed multiplier applied in
    `Sim::steer` unlocks TC2 on its own, without multi-floor navigation.
 
-3. **The repulsion/density split above.**
+2. **The repulsion/density split above.**
 
-4. Flow fields to replace per-agent A*. Note `reconsider_exits` now issues a
-   path query per exit per reconsideration, so this matters more than it did.
+3. **Flow fields** to replace per-agent A*. This matters more than it did:
+   `reconsider_exits` issues a path query per exit per reconsideration.
 
-5. Import pipeline; multi-select.
+4. **Floorplan import** — `services/` exists only as an unverified sketch on a
+   branch. Nothing has ever compiled or linted it.
+
+5. Multi-select and marquee; scenario events (a door closing mid-run) — the
+   schema has `events` and the engine ignores them.
 
 ### Parallel work parked on branches
 
@@ -118,12 +124,12 @@ branched from `dba0367` and predate the calibration fixes.
 
 | Branch | State |
 |---|---|
-| `worktree-agent-ab40b1df98d31158e` | RiMEA suite — **already merged into main**, nothing left on the branch |
-| `worktree-agent-af192909cfdd38588` | Scenario authoring: `cf-wasm/src/scenario.rs` (1053 lines, 10 tests, compiles), `web/src/doc/scenario.ts`, `ArrivalPlot.tsx`. **No panel, not wired into `App.tsx`.** Finish by adding `ScenarioPanel.tsx` and mounting it. |
-| `worktree-agent-aedbe6affb1b5f598` | Floorplan importer under `services/`. Unverified — never compiled or linted. Treat as a sketch. |
+| `worktree-agent-ab40b1df98d31158e` | RiMEA suite — **merged**, nothing left on the branch |
+| `worktree-agent-af192909cfdd38588` | Scenario authoring — **merged and wired**, nothing left |
+| `worktree-agent-aedbe6affb1b5f598` | Floorplan importer under `services/`. **Unverified — never compiled or linted.** Treat as a sketch. |
 
-Before merging either, re-run the suite: they were written against the old exit
-semantics, which is exactly what caught the deadlock regression.
+The importer was written against the old data contract and has never been run.
+Re-run the full suite after touching it.
 
 2. **Flow fields** (`cf-navmesh`) — replace per-agent A\* with one Dijkstra per
    goal over the triangle dual. This is what makes 25k agents feasible; the
