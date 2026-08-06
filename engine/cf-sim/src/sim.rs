@@ -133,6 +133,10 @@ pub struct Sim {
     routes: Vec<Route>,
     /// Consecutive ticks each agent has wanted to move and failed to.
     stuck_ticks: Vec<u16>,
+    /// Last known triangle per agent, so terrain lookup is a local walk rather
+    /// than a scan of the whole mesh. Only maintained when the mesh has
+    /// non-uniform walking speeds.
+    tri_hint: Vec<usize>,
     /// Diagnostics from the most recent tick only.
     last_solve: SolveDiagnostics,
     density: DensityGrid,
@@ -165,6 +169,7 @@ impl Sim {
             exits: Vec::new(),
             routes: Vec::new(),
             stuck_ticks: Vec::new(),
+            tri_hint: Vec::new(),
             last_solve: SolveDiagnostics::default(),
             density: DensityGrid::new(bounds, 0.5),
             density_interval: 4,
@@ -204,6 +209,7 @@ impl Sim {
             exits,
             routes: Vec::new(),
             stuck_ticks: Vec::new(),
+            tri_hint: Vec::new(),
             last_solve: SolveDiagnostics::default(),
             density: DensityGrid::new(bounds, 0.5),
             density_interval: 4,
@@ -263,6 +269,7 @@ impl Sim {
         debug_assert_eq!(self.routes.len(), id as usize);
         self.routes.push(route);
         self.stuck_ticks.push(0);
+        self.tri_hint.push(0);
         // `World` starts patience at infinity, meaning "never reconsiders".
         // Give it a finite, staggered value so the crowd does not all
         // re-evaluate on the same tick and oscillate between doors.
@@ -303,6 +310,7 @@ impl Sim {
                 let id = self.world.spawn(params);
                 self.routes.push(Route::default());
                 self.stuck_ticks.push(0);
+                self.tri_hint.push(0);
                 id
             }
         }
@@ -420,6 +428,7 @@ impl Sim {
 
         // 2. Follow routes: pick each agent's desired velocity.
         self.steer();
+        self.apply_terrain_speed();
 
         // 3. Local density suppresses desired speed. Applied after steering so
         //    it scales a direction that already exists, and before forces so the
@@ -654,6 +663,44 @@ impl Sim {
 
         for (i, r) in changes {
             self.routes[i] = r;
+        }
+    }
+
+    /// Scale desired speed by the terrain an agent is standing on.
+    ///
+    /// This is what makes a stair a stair. `cf_schema` has carried
+    /// `Zone::speed_multiplier` and `VerticalLink::speed_multiplier_up/_down`
+    /// since the data model was written, and until now nothing read them:
+    /// `desired_speed` was a constant for an agent's whole run, so a flight of
+    /// stairs was walked at the same pace as a foyer and RiMEA TC2 could not be
+    /// written at all.
+    ///
+    /// Costs nothing on a venue without stairs. `uniform_speed` is settled at
+    /// build time, and when it holds this returns before touching an agent —
+    /// which matters, because the alternative is a point-location query per
+    /// agent per tick.
+    fn apply_terrain_speed(&mut self) {
+        let Some(mesh) = &self.mesh else {
+            return;
+        };
+        if mesh.uniform_speed {
+            return;
+        }
+        for i in 0..self.world.len() {
+            if !self.world.active[i] || !self.world.state[i].is_mobile() {
+                continue;
+            }
+            let p = Vec2::new(self.world.pos_x[i] as f64, self.world.pos_y[i] as f64);
+            let Some(idx) = mesh.locate_from(p, self.tri_hint[i]) else {
+                continue;
+            };
+            self.tri_hint[i] = idx;
+            let m = mesh.speed_at(idx);
+            if (m - 1.0).abs() < 1e-6 {
+                continue;
+            }
+            self.world.des_x[i] *= m;
+            self.world.des_y[i] *= m;
         }
     }
 

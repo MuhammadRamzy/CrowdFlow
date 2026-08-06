@@ -306,3 +306,74 @@ fn warnings_render_with_their_element() {
         "warning text should name the opening and its width: {text:#?}"
     );
 }
+
+#[test]
+fn a_zone_speed_multiplier_reaches_the_mesh() {
+    let mut f = rect_floor();
+    f.zones = vec![Zone {
+        id: ZoneId::new("z_stair"),
+        name: None,
+        layer: None,
+        // A band across the middle of the 20 x 12 hall.
+        polygon: poly(&[(8.0, 0.5), (12.0, 0.5), (12.0, 11.5), (8.0, 11.5)]),
+        kind: ZoneKind::AssemblyConcentrated,
+        olf_override: None,
+        olf_justification: None,
+        access: Vec::new(),
+        speed_multiplier: 0.5,
+        attractors: Vec::new(),
+        is_void: false,
+        provenance: None,
+    }];
+    let g = compile(&venue(f));
+    let fm = g.floors.first().expect("one floor");
+
+    let slowed = fm.mesh.tri_speed.iter().filter(|m| **m < 1.0).count();
+    let warned = has(&g, |w| {
+        matches!(
+            w,
+            CompileWarning::ZoneSpeedNotApplied { zone, .. } if zone.as_str() == "z_stair"
+        )
+    });
+
+    // Either the multiplier lands on triangles, or the compiler says it did
+    // not. What must never happen is a document that asks for a stair and gets
+    // silently walked at full speed.
+    if slowed > 0 {
+        assert!(
+            !fm.mesh.uniform_speed,
+            "speeds applied but mesh reads uniform"
+        );
+        assert!(!warned, "applied the multiplier and warned about it too");
+    } else {
+        assert!(
+            warned,
+            "no triangle took the multiplier and nothing warned: {:#?}",
+            g.warnings
+        );
+    }
+}
+
+#[test]
+fn a_zone_without_a_multiplier_leaves_the_mesh_uniform() {
+    // The overwhelmingly common case, and the one that must stay free: an
+    // all-1.0 mesh lets the simulation skip terrain lookup entirely.
+    let mut f = rect_floor();
+    f.zones = vec![Zone {
+        id: ZoneId::new("z_hall"),
+        name: None,
+        layer: None,
+        polygon: poly(&[(1.0, 1.0), (19.0, 1.0), (19.0, 11.0), (1.0, 11.0)]),
+        kind: ZoneKind::AssemblyConcentrated,
+        olf_override: None,
+        olf_justification: None,
+        access: Vec::new(),
+        speed_multiplier: 1.0,
+        attractors: Vec::new(),
+        is_void: false,
+        provenance: None,
+    }];
+    let g = compile(&venue(f));
+    let fm = g.floors.first().expect("one floor");
+    assert!(fm.mesh.uniform_speed);
+}

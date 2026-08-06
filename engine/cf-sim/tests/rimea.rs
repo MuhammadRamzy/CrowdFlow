@@ -298,38 +298,107 @@ fn tc1_an_agent_holds_its_walking_speed_along_a_corridor() {
 // TC2 — maintaining walking speed on stairs
 // ---------------------------------------------------------------------------
 
-/// **TC2.** Assigned speed reduction applied going up and down stairs.
+/// **TC2.** An assigned speed reduction is applied while crossing a stair.
 ///
-/// **Cannot be written: `cf-sim` does not model stairs at all.**
+/// A 40 m corridor whose middle 10 m is a stair with a 0.5 multiplier. The
+/// agent must walk the level sections at its assigned speed and the stair at
+/// half of it — which is the whole of what RiMEA TC2 asks, and is checkable on
+/// a plane region without vertical circulation existing.
 ///
-/// The *data contract* has everything needed —
-/// `cf_schema::venue::VerticalLink` carries `speed_multiplier_up`,
-/// `speed_multiplier_down`, `flow_rate_ppmm`, `riser_m` and `going_m`, and
-/// `cf_schema::venue::Zone` carries a `speed_multiplier`. None of it reaches
-/// the simulation: [`cf_sim::Sim`] holds a single [`cf_navmesh::NavMesh`] with
-/// no floor identity, no vertical links, and nothing anywhere in
-/// `cf_sim::locomotion` reads a per-zone or per-triangle speed multiplier.
-/// `desired_speed` is a per-agent constant for the whole run.
+/// `Zone::speed_multiplier` and `VerticalLink::speed_multiplier_up/_down` have
+/// been in the data contract since the data model was written; until the
+/// per-triangle multiplier landed nothing read them, `desired_speed` was
+/// constant for an agent's whole run, and this test could only assert its own
+/// impossibility.
 ///
-/// Two things are needed before this test can say anything:
-///
-/// 1. A per-triangle (or per-zone) speed multiplier that `Sim::steer` applies
-///    to `desired_speed`, so a "stair" region slows agents crossing it.
-/// 2. Multi-floor navigation, so an agent can traverse a `VerticalLink`
-///    between two meshes.
-///
-/// Item 1 alone is enough for TC2 itself — a stair can be verified as a plane
-/// region with a multiplier before vertical circulation exists. Item 2 is what
-/// `docs/06-validation.md` §3 "Vertical circulation" additionally needs.
+/// **Multi-floor navigation is still absent**, so a real staircase between two
+/// meshes cannot be simulated. `docs/06-validation.md` §3 "Vertical
+/// circulation" needs that; TC2 itself does not.
 #[test]
-#[ignore = "stairs are not modelled: cf-sim has no vertical links and no per-zone speed multiplier; see docs/06-validation.md"]
 fn tc2_walking_speed_on_stairs_is_reduced() {
-    panic!(
-        "not implementable: cf_sim::Sim has no notion of a stair. \
-         cf_schema::venue::VerticalLink::speed_multiplier_up / _down and \
-         cf_schema::venue::Zone::speed_multiplier exist in the data contract \
-         but nothing in cf-sim reads them, and desired_speed is constant for \
-         an agent's whole run. See this test's doc comment for what is needed."
+    const STAIR_FACTOR: f32 = 0.5;
+    let (lo, hi) = (15.0, 25.0);
+
+    // Vertices at the foot and head of the stair, so the band is its own set
+    // of triangles. A zone boundary is a constraint in the compiled mesh for
+    // exactly this reason — without one, a 40 x 2 corridor is two triangles and
+    // there is nothing to attach a multiplier to.
+    let pts = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(lo, 0.0),
+        Vec2::new(hi, 0.0),
+        Vec2::new(40.0, 0.0),
+        Vec2::new(40.0, 2.0),
+        Vec2::new(hi, 2.0),
+        Vec2::new(lo, 2.0),
+        Vec2::new(0.0, 2.0),
+    ];
+    let doors = [(3usize, 4usize)];
+    let mut m = mesh(&pts, &ring_walls(8, &doors), &doors);
+
+    // Mark every triangle whose centroid falls in the stair band.
+    let stair: Vec<usize> = (0..m.centroids.len())
+        .filter(|i| m.regions.is_walkable(*i))
+        .filter(|i| {
+            let c = m.centroids[*i];
+            c.x >= lo && c.x <= hi
+        })
+        .collect();
+    assert!(!stair.is_empty(), "no triangle fell in the stair band");
+    for i in stair {
+        m.set_triangle_speed(i, STAIR_FACTOR);
+    }
+    assert!(!m.uniform_speed, "the mesh should no longer be uniform");
+
+    let mut sim = Sim::new(m, exits_of(&pts, &doors), SimParams::default(), 20260803);
+    sim.spawn_to_nearest_exit(person(1.0, 1.0, RIMEA_SPEED));
+
+    // Time the crossings of each boundary, so the level and stair sections are
+    // measured separately rather than inferred from one average.
+    let dt = SimParams::default().dt;
+    let (mut t_lo, mut t_hi, mut t_end) = (None, None, None);
+    let mut prev = 1.0f64;
+    for tick in 0..4000u64 {
+        sim.step();
+        if sim.stats().active == 0 {
+            t_end.get_or_insert(tick as f64 * dt);
+            break;
+        }
+        let x = sim.world.pos_x[0] as f64;
+        let now = tick as f64 * dt;
+        if prev < lo && x >= lo {
+            t_lo = Some(now);
+        }
+        if prev < hi && x >= hi {
+            t_hi = Some(now);
+        }
+        prev = x;
+    }
+
+    let a = t_lo.expect("agent never reached the foot of the stair");
+    let b = t_hi.expect("agent never reached the head of the stair");
+
+    let stair_speed = (hi - lo) / (b - a);
+    let expected = RIMEA_SPEED as f64 * STAIR_FACTOR as f64;
+    println!(
+        "TC2: {stair_speed:.3} m/s across a {STAIR_FACTOR} stair, expected \
+         {expected:.3} m/s ({:+.1}%)",
+        (stair_speed / expected - 1.0) * 100.0
+    );
+
+    assert!(
+        (stair_speed / expected - 1.0).abs() <= 0.05,
+        "speed on the stair was {stair_speed:.3} m/s against an expected \
+         {expected:.3} m/s — the multiplier is not being applied as assigned"
+    );
+
+    // And the level approach must be unaffected: a multiplier that leaked into
+    // the rest of the corridor would pass the check above and still be wrong.
+    let level_speed = (lo - 1.0) / a;
+    assert!(
+        (level_speed / RIMEA_SPEED as f64 - 1.0).abs() <= 0.06,
+        "level approach ran at {level_speed:.3} m/s against an assigned \
+         {RIMEA_SPEED} — the stair multiplier is leaking outside its region"
     );
 }
 

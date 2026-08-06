@@ -204,6 +204,7 @@ impl From<&CompileWarning> for WarningView {
             CompileWarning::UnclosedOutline { .. } => "unclosedOutline",
             CompileWarning::DisconnectedRegion { .. } => "disconnectedRegion",
             CompileWarning::ZoneNotOnFloor { .. } => "zoneNotOnFloor",
+            CompileWarning::ZoneSpeedNotApplied { .. } => "zoneSpeedNotApplied",
             CompileWarning::NoFireExit { .. } => "noFireExit",
             CompileWarning::TriangulationFailed { .. } => "triangulationFailed",
             CompileWarning::EmptyFloor { .. } => "emptyFloor",

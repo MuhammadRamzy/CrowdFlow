@@ -47,6 +47,14 @@ pub enum CompileWarning {
     /// A zone's centroid does not land on walkable floor.
     ZoneNotOnFloor { zone: ZoneId, floor: FloorId },
 
+    /// A zone asks for a walking-speed change that no triangle picked up.
+    ///
+    /// The multiplier is applied to triangles whose centroid the zone contains.
+    /// A zone smaller than the local triangles contains none, so the stair or
+    /// ramp it describes would be walked at full speed — silently, which is
+    /// worse than not supporting it at all.
+    ZoneSpeedNotApplied { zone: ZoneId, floor: FloorId },
+
     /// The floor has no opening marked as a fire exit.
     NoFireExit { floor: FloorId },
 
@@ -111,6 +119,12 @@ impl std::fmt::Display for CompileWarning {
             DisconnectedRegion { floor, triangles } => write!(
                 f,
                 "floor '{floor}' has {triangles} triangle(s) unreachable from the rest"
+            ),
+            ZoneSpeedNotApplied { zone, floor } => write!(
+                f,
+                "zone '{zone}' on floor '{floor}' sets a walking-speed multiplier \
+                 but is too small for the mesh here, so no triangle takes it and \
+                 the speed change will not happen"
             ),
             ZoneNotOnFloor { zone, floor } => write!(
                 f,

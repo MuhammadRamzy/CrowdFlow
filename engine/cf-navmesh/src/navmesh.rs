@@ -51,6 +51,18 @@ pub struct NavMesh {
     pub tri_portals: Vec<Vec<usize>>,
     /// Cached centroids, indexed by triangle.
     pub centroids: Vec<Vec2>,
+    /// Multiplier on walking speed for each triangle. 1.0 is level floor.
+    ///
+    /// This is how a stair, a ramp or a congested-by-design zone slows the
+    /// people crossing it, rather than the agents carrying a speed that is
+    /// constant for their whole run.
+    pub tri_speed: Vec<f32>,
+    /// Whether every entry in `tri_speed` is 1.0.
+    ///
+    /// Checked once at build time so the simulation can skip per-agent triangle
+    /// lookup entirely on the overwhelmingly common venue that has no stairs.
+    /// A feature nobody is using should not cost anything.
+    pub uniform_speed: bool,
 }
 
 impl NavMesh {
@@ -65,6 +77,7 @@ impl NavMesh {
         let mut portals = Vec::new();
         let mut tri_portals = vec![Vec::new(); n];
         let mut centroids = vec![Vec2::ZERO; n];
+        let tri_speed = vec![1.0f32; n];
 
         for (idx, t) in tri.live() {
             let [a, b, c] = t.v;
@@ -106,6 +119,8 @@ impl NavMesh {
             portals,
             tri_portals,
             centroids,
+            tri_speed,
+            uniform_speed: true,
         }
     }
 
@@ -127,6 +142,77 @@ impl NavMesh {
     ///
     /// Linear scan. Fine at compile time and for tests; `cf-compile` will add a
     /// uniform grid index for the per-tick lookups the simulation makes.
+    /// Set the walking-speed multiplier for a triangle.
+    ///
+    /// `uniform_speed` is recomputed, so a mesh that has been given a stair
+    /// stops taking the free path through `Sim::steer` and one that has had its
+    /// stairs removed starts taking it again.
+    pub fn set_triangle_speed(&mut self, idx: TriIdx, multiplier: f32) {
+        if idx >= self.tri_speed.len() {
+            return;
+        }
+        self.tri_speed[idx] = multiplier.max(0.0);
+        self.uniform_speed = self.tri_speed.iter().all(|m| (*m - 1.0).abs() < 1e-6);
+    }
+
+    /// The speed multiplier at a triangle, or 1.0 for anything out of range.
+    pub fn speed_at(&self, idx: TriIdx) -> f32 {
+        self.tri_speed.get(idx).copied().unwrap_or(1.0)
+    }
+
+    /// Locate `p`, starting from a triangle it was recently in.
+    ///
+    /// `locate` scans every triangle, which is fine once at spawn and ruinous
+    /// once per agent per tick. An agent moves a small fraction of a triangle
+    /// in 50 ms, so the answer is nearly always the hint itself or one of its
+    /// neighbours. Falls back to the full scan only when the walk fails, which
+    /// happens when an agent is teleported or recovered from off-mesh.
+    pub fn locate_from(&self, p: Vec2, hint: TriIdx) -> Option<TriIdx> {
+        if self.contains(hint, p) {
+            return Some(hint);
+        }
+        // One ring, then two. Two rings covers any single-tick displacement in
+        // a mesh whose triangles are larger than a stride.
+        let mut ring = [NO_NEIGHBOUR; 3];
+        if let Some(t) = self.tri.triangles.get(hint) {
+            ring = t.n;
+        }
+        for nb in ring {
+            if nb != NO_NEIGHBOUR && self.contains(nb, p) {
+                return Some(nb);
+            }
+        }
+        for nb in ring {
+            if nb == NO_NEIGHBOUR {
+                continue;
+            }
+            let Some(t) = self.tri.triangles.get(nb) else {
+                continue;
+            };
+            for nn in t.n {
+                if nn != NO_NEIGHBOUR && self.contains(nn, p) {
+                    return Some(nn);
+                }
+            }
+        }
+        self.locate(p)
+    }
+
+    /// Whether `p` lies inside walkable triangle `idx`.
+    pub fn contains(&self, idx: TriIdx, p: Vec2) -> bool {
+        if !self.regions.is_walkable(idx) {
+            return false;
+        }
+        let Some(t) = self.tri.triangles.get(idx) else {
+            return false;
+        };
+        let [a, b, c] = t.v;
+        let (pa, pb, pc) = (self.tri.points[a], self.tri.points[b], self.tri.points[c]);
+        orient(pa, pb, p) != Orientation::Clockwise
+            && orient(pb, pc, p) != Orientation::Clockwise
+            && orient(pc, pa, p) != Orientation::Clockwise
+    }
+
     pub fn locate(&self, p: Vec2) -> Option<TriIdx> {
         self.tri.live().find_map(|(idx, t)| {
             if !self.regions.is_walkable(idx) {

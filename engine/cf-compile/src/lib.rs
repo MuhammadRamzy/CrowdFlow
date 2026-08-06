@@ -321,7 +321,7 @@ pub fn compile_floor(floor: &Floor, warnings: &mut Vec<CompileWarning>) -> Optio
     }
     tri.rebuild_adjacency();
 
-    let mesh = NavMesh::with_regions(tri, regions);
+    let mut mesh = NavMesh::with_regions(tri, regions);
 
     // --- bind each doorway to the floor behind it ------------------------
     for door in &mut doors {
@@ -334,7 +334,17 @@ pub fn compile_floor(floor: &Floor, warnings: &mut Vec<CompileWarning>) -> Optio
         });
     }
 
-    // --- zones must sit on floor -----------------------------------------
+    // --- zones must sit on floor, and may slow the people crossing them ---
+    //
+    // A zone carrying a `speed_multiplier` other than 1 stamps it onto every
+    // triangle whose centroid it contains. That is what turns a stair, a ramp
+    // or a deliberately slow queueing area from a field the document stores
+    // into something the simulation acts on.
+    //
+    // By centroid, so a triangle belongs wholly to one zone or to none. A
+    // triangle straddling a zone edge is a meshing artefact — the zone boundary
+    // ought to have been a constraint — and splitting its multiplier would give
+    // an agent a speed no zone actually specifies.
     for zone in &floor.zones {
         if zone.is_void {
             continue;
@@ -347,6 +357,24 @@ pub fn compile_floor(floor: &Floor, warnings: &mut Vec<CompileWarning>) -> Optio
                 zone: zone.id.clone(),
                 floor: floor.id.clone(),
             });
+        }
+
+        if (zone.speed_multiplier - 1.0).abs() < 1e-9 {
+            continue;
+        }
+        let m = zone.speed_multiplier as f32;
+        let inside: Vec<usize> = (0..mesh.centroids.len())
+            .filter(|i| mesh.regions.is_walkable(*i))
+            .filter(|i| cf_geom::polygon_ops::contains_point(&zone.polygon, mesh.centroids[*i]))
+            .collect();
+        if inside.is_empty() {
+            warnings.push(CompileWarning::ZoneSpeedNotApplied {
+                zone: zone.id.clone(),
+                floor: floor.id.clone(),
+            });
+        }
+        for i in inside {
+            mesh.set_triangle_speed(i, m);
         }
     }
 
