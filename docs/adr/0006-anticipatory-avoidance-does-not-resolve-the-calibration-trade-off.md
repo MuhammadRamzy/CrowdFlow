@@ -81,6 +81,48 @@ sets evacuation time directly, and being fast there produces a figure a venue
 is approved on and then fails to achieve; being slow at 3 persons/m² is the
 conservative error.
 
+## Also tried and also negative: softening the falloff
+
+`b_agent` had never been swept. At 0.08 m the repulsion is a stiff wall at
+contact rather than a personal-space gradient, so a longer, gentler falloff
+looked like the obvious shape correction — discourage tailgating without
+blocking a dense stream.
+
+| `a_agent` / `b_agent` | v(ρ=3) | 1.0 m doorway |
+|---|---|---|
+| 25 / 0.08 (current) | 0.04 | **82.1** |
+| 6 / 0.20 | 0.03 | 169.2 |
+| 3 / 0.30 | 0.04 | 207.2 |
+| 2 / 0.40 | 0.03 | 225.4 |
+| 1.2 / 0.55 | 0.07 | 231.1 |
+
+Worse on both counts, and monotonically so: the doorway degrades to +182% while
+the fundamental diagram does not improve at all. A long-range gentle force
+spreads the crowd out everywhere, which lets more of them present at the
+opening at once rather than fewer.
+
+The stiff short-range profile is doing something right and should be left
+alone.
+
+## A note on why personal space may not be the answer either
+
+The obvious reading of "split the radii" is to widen the separation the
+repulsion measures from — `(rᵢ + rⱼ)` becomes `(rᵢ + rⱼ + 2p)`. That makes the
+force *full strength at personal-space separation instead of at contact*, so at
+3 persons/m², where the surface gap is 0.117 m, it increases the repulsion by
+about an order of magnitude and makes the stream worse rather than better.
+
+Whatever is done here has to lower the force in a uniform stream while raising
+it at a bottleneck, and the two regimes are not distinguished by separation —
+measurement suggests a doorway at the correct flow runs at roughly 2 persons/m²
+while the failing test point is 3, so they are not even the same density.
+The likelier culprit is the **directional density sensor**: an agent at a
+doorway has genuinely clear floor ahead, reads a low density, and walks faster
+than the fundamental diagram allows at its actual local density. That sensor is
+also what fixed the corner deadlock, so it cannot simply be reverted — but
+instrumenting the density and speed *at the doorway* is the measurement that
+would settle it, and it has not been taken.
+
 ## What to try instead
 
 Anticipation was the wrong lever because it addresses *how* agents avoid each
