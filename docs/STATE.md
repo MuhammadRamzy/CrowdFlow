@@ -45,28 +45,34 @@ The frontend is real and drives the real engine — nothing on screen is mocked.
 
 ### Next up — pick from the top
 
-The locomotion model **meets its headline benchmark and the RiMEA suite runs
-green.** 231 tests passing, 5 ignored — and every ignore is a stated limitation
-with its measured value recorded, not a loosened threshold.
+The engine is in good shape. **233 tests passing, 3 ignored** — and of those
+three, one is a diagnostic tool rather than a test. Every RiMEA case the engine
+is capable of satisfying, satisfies.
 
     cargo test -p cf-sim calibration -- --ignored --nocapture
     cargo test -p cf-sim --test rimea -- --include-ignored
 
 | Measurement | Model | Reference | Error |
 |---|---|---|---|
-| 1.0 m doorway flow | 82.1 p/m/min | 82 (Green Guide) | +0% |
+| 1.0 m doorway flow | 82.1 p/m/min | 82 (Green Guide) | **+0%** |
 | Speed at ρ = 0.5 /m² | 1.34 m/s | 1.30 (Weidmann) | +3% |
 | Speed at ρ = 1.0 /m² | 1.28 m/s | 1.06 (Weidmann) | +21% |
 | Speed at ρ = 2.0 /m² | 0.47 m/s | 0.61 (Weidmann) | −23% |
 | Speed at ρ = 3.0 /m² | 0.04 m/s | 0.33 (Weidmann) | −89% |
 
-RiMEA TC1, TC3, TC4(curve), TC6, TC7, TC8 ×2, TC11(nearest), TC12 all pass.
+RiMEA TC1, TC3, TC4(curve), TC6, TC7 ×2, TC8 ×2, TC11 ×2, TC12 all pass.
+
+Still ignored, all three honestly:
+
+- **TC2 stairs** — an unimplemented feature, see item 2 below.
+- **TC4 fundamental diagram** — the trade-off below.
+- **`sweep_agent_repulsion`** — a tool for re-tuning, not an assertion.
 
 ### The one trade-off you need to know about
 
 **A single `a_agent` cannot satisfy both doorway flow and the fundamental
-diagram.** The sweep is unambiguous — run it yourself with
-`cargo test -p cf-sim sweep_agent_repulsion -- --ignored --nocapture`:
+diagram.** Run `cargo test -p cf-sim sweep_agent_repulsion -- --ignored
+--nocapture` and see for yourself:
 
 | `a_agent` | v(3.0) | 1.0 m door |
 |---|---|---|
@@ -74,35 +80,35 @@ diagram.** The sweep is unambiguous — run it yourself with
 | 6 | 0.30 | 140.5 |
 | 3 | **0.34** | 156.5 |
 
-Weak repulsion lets the density law govern and the fundamental diagram comes
-right, but agents then pack into a doorway far tighter than people do and flow
-runs up to +91%. The model is tuned to the door, because doorway flow sets
-evacuation time directly and running *fast* there is the direction that
-produces a number a venue gets approved on and then fails to achieve. Being
-slow at 3 p/m² is conservative.
+Weak repulsion lets the density law govern and the diagram comes right, but
+agents then pack into a doorway far tighter than people do and flow runs up to
++91%. The model is tuned to the door, because doorway flow sets evacuation time
+directly and running *fast* there produces a number a venue gets approved on
+and then fails to achieve. Slow at 3 p/m² is the conservative error.
 
-Fixing this properly needs the two mechanisms separated — repulsion for
-avoidance only, with the density law carrying the bulk slowing — rather than a
-constant that does both jobs badly at one end.
+Fixing it properly means separating the two mechanisms — repulsion for
+avoidance only, the density law carrying the bulk slowing — rather than one
+constant doing both jobs badly at one end.
 
 Ranked, what is left:
 
-1. **Congestion-aware rerouting** (RiMEA TC11 diversion, currently 0%). Routes
-   are planned once at spawn and only re-planned when an agent is stuck for two
-   seconds. Nobody ever chooses a less crowded exit, so a venue with one popular
-   door and one ignored door reports the wrong egress time.
+1. **Scenario authoring UI** — populations, arrival curves, entries, goals.
+   This is the biggest gap between what the engine can do and what the app can
+   express, and it is the demo-relevant one. Foundation exists on a branch, see
+   below.
 
-2. **The repulsion/density split above.**
+2. **Stairs** (RiMEA TC2). `cf_schema::venue::VerticalLink` already carries
+   `speed_multiplier_up/_down`, `riser_m` and `going_m`, and `Zone` carries
+   `speed_multiplier` — none of it reaches `cf-sim`, which holds one flat
+   `NavMesh` with no zone identity. A per-triangle speed multiplier applied in
+   `Sim::steer` unlocks TC2 on its own, without multi-floor navigation.
 
-3. **Stairs** (RiMEA TC2). `cf_schema::venue::VerticalLink` already carries
-   `speed_multiplier_up/_down`, `riser_m`, `going_m`, and `Zone` carries
-   `speed_multiplier` — none of it reaches `cf-sim`. A per-zone speed multiplier
-   alone unlocks TC2 without needing multi-floor navigation.
+3. **The repulsion/density split above.**
 
-4. **Scenario authoring UI** — populations, arrival curves, entries, goals.
-   Foundation exists on a branch, see below.
+4. Flow fields to replace per-agent A*. Note `reconsider_exits` now issues a
+   path query per exit per reconsideration, so this matters more than it did.
 
-5. Flow fields to replace per-agent A*; import pipeline; multi-select.
+5. Import pipeline; multi-select.
 
 ### Parallel work parked on branches
 
