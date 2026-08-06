@@ -503,10 +503,10 @@ mod tests {
     #[ignore = "diagnostic tool, not an assertion"]
     fn sweep_agent_repulsion() {
         println!(
-            "{:>8} {:>9} {:>9} {:>10} {:>10} {:>9}",
-            "a_agent", "v(1.0)", "v(2.0)", "lateral(2)", "door 1.0m", "overlap"
+            "{:>8} {:>9} {:>9} {:>9} {:>10} {:>9}",
+            "a_agent", "v(1.0)", "v(2.0)", "v(3.0)", "door 1.0m", "overlap"
         );
-        for a in [2000.0f32, 200.0, 50.0, 25.0, 12.0, 6.0] {
+        for a in [25.0f32, 12.0, 6.0, 3.0, 1.5] {
             let params = LocomotionParams {
                 a_agent: a,
                 a_wall: a,
@@ -514,13 +514,14 @@ mod tests {
             };
             let p1 = measure_speed_at_density(1.0, params);
             let p2 = measure_speed_at_density(2.0, params);
+            let p3 = measure_speed_at_density(3.0, params);
             let door = measure_doorway_flow(1.0, 200, params);
             println!(
-                "{a:>8.0} {:>9.2} {:>9.2} {:>10.2} {:>10.1} {:>9.3}",
-                p1.speed, p2.speed, p2.lateral, door.specific_flow, door.max_overlap
+                "{a:>8.0} {:>9.2} {:>9.2} {:>9.2} {:>10.1} {:>9.3}",
+                p1.speed, p2.speed, p3.speed, door.specific_flow, door.max_overlap
             );
         }
-        println!("reference: v(1.0)=1.06  v(2.0)=0.61  lateral~0  door=82  overlap~0");
+        println!("reference: v(1.0)=1.06  v(2.0)=0.61  v(3.0)=0.33  door=82");
     }
 
     #[test]

@@ -45,48 +45,59 @@ The frontend is real and drives the real engine — nothing on screen is mocked.
 
 ### Next up — pick from the top
 
-The locomotion model **now meets its headline benchmark.** Three real bugs came
-out of the calibration work; the numbers below are current.
+The locomotion model **meets its headline benchmark and the RiMEA suite runs
+green.** 231 tests passing, 5 ignored — and every ignore is a stated limitation
+with its measured value recorded, not a loosened threshold.
 
     cargo test -p cf-sim calibration -- --ignored --nocapture
-    cargo test -p cf-sim --test rimea -- --ignored --nocapture
+    cargo test -p cf-sim --test rimea -- --include-ignored
 
 | Measurement | Model | Reference | Error |
 |---|---|---|---|
-| 1.0 m doorway flow | 74.8 p/m/min | 82 (Green Guide) | −9% |
+| 1.0 m doorway flow | 82.1 p/m/min | 82 (Green Guide) | +0% |
 | Speed at ρ = 0.5 /m² | 1.34 m/s | 1.30 (Weidmann) | +3% |
-| Speed at ρ = 1.0 /m² | 1.23 m/s | 1.06 (Weidmann) | +17% |
-| Speed at ρ = 2.0 /m² | 0.42 m/s | 0.61 (Weidmann) | −31% |
+| Speed at ρ = 1.0 /m² | 1.28 m/s | 1.06 (Weidmann) | +21% |
+| Speed at ρ = 2.0 /m² | 0.47 m/s | 0.61 (Weidmann) | −23% |
 | Speed at ρ = 3.0 /m² | 0.04 m/s | 0.33 (Weidmann) | −89% |
-| 0.9 m doorway flow | 47.3 p/m/min | 82 | −42% |
-| 1.8 m doorway flow | 92.7 p/m/min | 82 | +11% |
 
-What was wrong, all three found by measurement rather than by reading code:
+RiMEA TC1, TC3, TC4(curve), TC6, TC7, TC8 ×2, TC11(nearest), TC12 all pass.
 
-- **A doorway was a capsule, not a door.** Exit despawned anyone within 0.6 m of
-  the span, reaching back into the room, so no queue ever formed. 281 p/m/min.
-- **`a_agent` was Helbing's 2000 *newtons* used as an acceleration**, a factor of
-  body mass out. At ρ = 2 the crowd gridlocked and boiled sideways at 1.18 m/s.
-- **The fundamental diagram averaged |v|**, so that boiling was reported as
-  *speed*: "+253% too fast" was really 0.00 m/s of transport. It now reports the
-  component along the flow, with lateral motion and overlap beside it.
+### The one trade-off you need to know about
+
+**A single `a_agent` cannot satisfy both doorway flow and the fundamental
+diagram.** The sweep is unambiguous — run it yourself with
+`cargo test -p cf-sim sweep_agent_repulsion -- --ignored --nocapture`:
+
+| `a_agent` | v(3.0) | 1.0 m door |
+|---|---|---|
+| 25 (current) | 0.04 | **82.1** |
+| 6 | 0.30 | 140.5 |
+| 3 | **0.34** | 156.5 |
+
+Weak repulsion lets the density law govern and the fundamental diagram comes
+right, but agents then pack into a doorway far tighter than people do and flow
+runs up to +91%. The model is tuned to the door, because doorway flow sets
+evacuation time directly and running *fast* there is the direction that
+produces a number a venue gets approved on and then fails to achieve. Being
+slow at 3 p/m² is conservative.
+
+Fixing this properly needs the two mechanisms separated — repulsion for
+avoidance only, with the density law carrying the bulk slowing — rather than a
+constant that does both jobs badly at one end.
 
 Ranked, what is left:
 
-1. **Corner and merge deadlock.** RiMEA TC3, TC6 and TC12 are ignored because
-   agents pile up at corners and never clear them (13 of 20, 3 of 10, 32 of 40).
-   This is the biggest remaining correctness problem — a venue with a corner is
-   every venue. Suspect the funnel path hugging the inside corner so tightly that
-   bodies cannot fit, or wall repulsion at a reflex vertex.
+1. **Congestion-aware rerouting** (RiMEA TC11 diversion, currently 0%). Routes
+   are planned once at spawn and only re-planned when an agent is stuck for two
+   seconds. Nobody ever chooses a less crowded exit, so a venue with one popular
+   door and one ignored door reports the wrong egress time.
 
-2. **Density above ρ ≈ 2 is far too slow** (−89% at ρ = 3). The coupling
-   over-suppresses once the sensed disc saturates. Probably wants the sensed
-   density clamping, or the coupling applying to a *target* rather than a
-   ceiling.
+2. **The repulsion/density split above.**
 
-3. **Specific flow is not width-independent** — 1.96× between 0.9 m and 1.8 m.
-   Narrow doors are under-served, which is the safe direction but still wrong,
-   and 0.9 m is the common case in a real venue.
+3. **Stairs** (RiMEA TC2). `cf_schema::venue::VerticalLink` already carries
+   `speed_multiplier_up/_down`, `riser_m`, `going_m`, and `Zone` carries
+   `speed_multiplier` — none of it reaches `cf-sim`. A per-zone speed multiplier
+   alone unlocks TC2 without needing multi-floor navigation.
 
 4. **Scenario authoring UI** — populations, arrival curves, entries, goals.
    Foundation exists on a branch, see below.
