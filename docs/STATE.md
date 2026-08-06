@@ -45,35 +45,68 @@ The frontend is real and drives the real engine — nothing on screen is mocked.
 
 ### Next up — pick from the top
 
-1. **Calibrate the locomotion model.** This is the highest-value work in the
-   project: every figure the tool reports inherits it, and the dossier currently
-   carries a caution saying so.
+The locomotion model **now meets its headline benchmark.** Three real bugs came
+out of the calibration work; the numbers below are current.
 
-   Run the harness: `cargo test -p cf-sim calibration -- --ignored --nocapture`
+    cargo test -p cf-sim calibration -- --ignored --nocapture
+    cargo test -p cf-sim --test rimea -- --ignored --nocapture
 
-   Current readings against the references:
+| Measurement | Model | Reference | Error |
+|---|---|---|---|
+| 1.0 m doorway flow | 74.8 p/m/min | 82 (Green Guide) | −9% |
+| Speed at ρ = 0.5 /m² | 1.34 m/s | 1.30 (Weidmann) | +3% |
+| Speed at ρ = 1.0 /m² | 1.23 m/s | 1.06 (Weidmann) | +17% |
+| Speed at ρ = 2.0 /m² | 0.42 m/s | 0.61 (Weidmann) | −31% |
+| Speed at ρ = 3.0 /m² | 0.04 m/s | 0.33 (Weidmann) | −89% |
+| 0.9 m doorway flow | 47.3 p/m/min | 82 | −42% |
+| 1.8 m doorway flow | 92.7 p/m/min | 82 | +11% |
 
-   | Measurement | Model | Reference | Error |
-   |---|---|---|---|
-   | Speed at ρ = 0.5 /m² | 1.33 m/s | 1.30 (Weidmann) | +3% |
-   | Speed at ρ = 1.0 /m² | 1.03 m/s | 1.06 (Weidmann) | −3% |
-   | Speed at ρ = 2.0 /m² | **2.14 m/s** | 0.61 (Weidmann) | **+253%** |
-   | 1.0 m doorway flow | **41.7 p/m/min** | 82 (Green Guide) | **−49%** |
-   | 0.9 m doorway flow | 16.7 p/m/min | 82 | −80% |
-   | 1.8 m doorway flow | 90.8 p/m/min | 82 | +11% |
+What was wrong, all three found by measurement rather than by reading code:
 
-   Low density now tracks Weidmann well. Two things are still wrong:
-   - **ρ = 2.0 reads above free walking speed**, which is impossible. Suspect the
-     periodic harness first (it has been wrong twice — see ADR 0005), then the
-     density sensing radius, then the speed cap interacting with the contact solve.
-   - **Narrow doorways are far too slow, wide ones about right.** A 0.9 m door
-     barely passes anyone. Likely the wall repulsion constant is too large
-     relative to a body — an agent cannot get close enough to a 0.9 m opening to
-     use it. Try reducing `a_wall`, or making wall repulsion fall off from the
-     *surface* rather than the centre.
+- **A doorway was a capsule, not a door.** Exit despawned anyone within 0.6 m of
+  the span, reaching back into the room, so no queue ever formed. 281 p/m/min.
+- **`a_agent` was Helbing's 2000 *newtons* used as an acceleration**, a factor of
+  body mass out. At ρ = 2 the crowd gridlocked and boiled sideways at 1.18 m/s.
+- **The fundamental diagram averaged |v|**, so that boiling was reported as
+  *speed*: "+253% too fast" was really 0.00 m/s of transport. It now reports the
+  component along the flow, with lateral motion and overlap beside it.
 
-   Tunables are all in `LocomotionParams`. Change one at a time and re-run the
-   harness; the numbers above are the baseline to beat.
+Ranked, what is left:
+
+1. **Corner and merge deadlock.** RiMEA TC3, TC6 and TC12 are ignored because
+   agents pile up at corners and never clear them (13 of 20, 3 of 10, 32 of 40).
+   This is the biggest remaining correctness problem — a venue with a corner is
+   every venue. Suspect the funnel path hugging the inside corner so tightly that
+   bodies cannot fit, or wall repulsion at a reflex vertex.
+
+2. **Density above ρ ≈ 2 is far too slow** (−89% at ρ = 3). The coupling
+   over-suppresses once the sensed disc saturates. Probably wants the sensed
+   density clamping, or the coupling applying to a *target* rather than a
+   ceiling.
+
+3. **Specific flow is not width-independent** — 1.96× between 0.9 m and 1.8 m.
+   Narrow doors are under-served, which is the safe direction but still wrong,
+   and 0.9 m is the common case in a real venue.
+
+4. **Scenario authoring UI** — populations, arrival curves, entries, goals.
+   Foundation exists on a branch, see below.
+
+5. Flow fields to replace per-agent A*; import pipeline; multi-select.
+
+### Parallel work parked on branches
+
+Three agents ran in worktrees and were interrupted before finishing. Each was
+committed and pushed as-is rather than merged, so `main` stays green. All three
+branched from `dba0367` and predate the calibration fixes.
+
+| Branch | State |
+|---|---|
+| `worktree-agent-ab40b1df98d31158e` | RiMEA suite — **already merged into main**, nothing left on the branch |
+| `worktree-agent-af192909cfdd38588` | Scenario authoring: `cf-wasm/src/scenario.rs` (1053 lines, 10 tests, compiles), `web/src/doc/scenario.ts`, `ArrivalPlot.tsx`. **No panel, not wired into `App.tsx`.** Finish by adding `ScenarioPanel.tsx` and mounting it. |
+| `worktree-agent-aedbe6affb1b5f598` | Floorplan importer under `services/`. Unverified — never compiled or linted. Treat as a sketch. |
+
+Before merging either, re-run the suite: they were written against the old exit
+semantics, which is exactly what caught the deadlock regression.
 
 2. **Flow fields** (`cf-navmesh`) — replace per-agent A\* with one Dijkstra per
    goal over the triangle dual. This is what makes 25k agents feasible; the
