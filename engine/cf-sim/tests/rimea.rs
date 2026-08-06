@@ -922,7 +922,6 @@ fn tc11_agents_choose_the_nearest_exit_by_walking_distance() {
 /// feature, and because a suite that quietly omits what the engine cannot do
 /// reads as a suite the engine passes.
 #[test]
-#[ignore = "congestion-aware rerouting is not implemented: routes are planned once at spawn and never revisited, so the diverted fraction is 0%; see docs/06-validation.md §3"]
 fn tc11_agents_divert_from_a_saturating_exit() {
     // A plain 20 x 10 hall with a 2 m exit at each end of the south wall.
     let pts = vec![

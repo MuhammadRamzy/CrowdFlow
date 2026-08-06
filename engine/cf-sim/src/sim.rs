@@ -29,7 +29,7 @@
 
 use crate::density::DensityGrid;
 use crate::locomotion::{self, LocomotionParams, LocomotionScratch};
-use crate::rng::Rng;
+use crate::rng::{Rng, Stream};
 use crate::spatial::SpatialGrid;
 use crate::world::{AgentId, AgentState, World};
 use cf_geom::{Aabb, Segment, Vec2};
@@ -65,6 +65,14 @@ pub struct SimParams {
     pub waypoint_radius: f32,
     /// Speed below which a mobile agent is considered blocked, m/s.
     pub blocked_speed: f32,
+    /// Mean seconds between an agent reconsidering which exit it is heading
+    /// for. Zero disables congestion-aware rerouting entirely.
+    ///
+    /// Reconsidering costs a path query per exit, so this is a direct
+    /// performance lever as well as a behavioural one. Eight seconds is long
+    /// enough to be affordable and short enough that a crowd redistributes
+    /// while it still matters.
+    pub reroute_interval_s: f32,
 }
 
 impl Default for SimParams {
@@ -74,6 +82,7 @@ impl Default for SimParams {
             locomotion: LocomotionParams::default(),
             waypoint_radius: 0.5,
             blocked_speed: 0.1,
+            reroute_interval_s: 8.0,
         }
     }
 }
@@ -254,6 +263,11 @@ impl Sim {
         debug_assert_eq!(self.routes.len(), id as usize);
         self.routes.push(route);
         self.stuck_ticks.push(0);
+        // `World` starts patience at infinity, meaning "never reconsiders".
+        // Give it a finite, staggered value so the crowd does not all
+        // re-evaluate on the same tick and oscillate between doors.
+        let u = self.rng.uniform01(Stream::RerouteChoice, id as u64, 0) as f32;
+        self.world.patience_left[id as usize] = self.params.reroute_interval_s * (0.5 + u);
         id
     }
 
@@ -476,6 +490,7 @@ impl Sim {
 
         locomotion::update_blocked_state(&mut self.world, self.params.blocked_speed);
         self.replan_the_stuck();
+        self.reconsider_exits(dt);
 
         // Derive time from the tick count rather than accumulating. Repeated
         // `time += dt` drifts — `0.05f32` is not exactly 0.05, and a 90-minute
@@ -545,6 +560,100 @@ impl Sim {
                 continue;
             }
             self.routes[i] = self.plan(from, goal, self.world.radius[i] as f64);
+        }
+    }
+
+    /// Let agents change their minds about which exit to use.
+    ///
+    /// Routing everyone to their nearest door is right until that door
+    /// saturates. A real crowd redistributes: people can see a queue, and some
+    /// of them walk further to avoid it. Without this a hall with one popular
+    /// and one ignored exit reports the egress time of the popular one alone,
+    /// which is optimistic — the direction that matters.
+    ///
+    /// The cost of an exit is the time to walk to it plus the time to get
+    /// through the queue already there, `queue / (width × specific flow)`, using
+    /// the Green Guide's 82 persons/m/min. That is the hydraulic model the
+    /// dossier already quotes, so the agent's decision and the compliance
+    /// arithmetic rest on the same figure rather than on two different ones.
+    ///
+    /// Agents reconsider on a stagger drawn from `Stream::RerouteChoice`, not
+    /// all on the same tick: a synchronised crowd oscillates between two doors,
+    /// which looks dramatic and is wrong.
+    fn reconsider_exits(&mut self, dt: f32) {
+        if self.params.reroute_interval_s <= 0.0 || self.exits.len() < 2 {
+            return;
+        }
+        let Some(mesh) = &self.mesh else {
+            return;
+        };
+
+        // How many are already waiting at each door. One pass, shared by every
+        // agent that reconsiders this tick.
+        const QUEUE_RADIUS: f64 = 4.0;
+        let mut queue = vec![0u32; self.exits.len()];
+        for i in 0..self.world.len() {
+            if !self.world.active[i] {
+                continue;
+            }
+            let p = Vec2::new(self.world.pos_x[i] as f64, self.world.pos_y[i] as f64);
+            for (e, span) in self.exits.iter().enumerate() {
+                if span.segment().distance_to_point(p) <= QUEUE_RADIUS {
+                    queue[e] += 1;
+                    break;
+                }
+            }
+        }
+
+        // Persons per second each door can pass, from its clear width.
+        let capacity: Vec<f64> = self
+            .exits
+            .iter()
+            .map(|e| (e.segment().length() * 82.0 / 60.0).max(1e-3))
+            .collect();
+
+        let mut changes: Vec<(usize, Route)> = Vec::new();
+        for i in 0..self.world.len() {
+            if !self.world.active[i] || !self.world.state[i].is_mobile() {
+                continue;
+            }
+            self.world.patience_left[i] -= dt;
+            if self.world.patience_left[i] > 0.0 {
+                continue;
+            }
+            // Stagger the next one so the crowd never decides in lockstep.
+            let u = self
+                .rng
+                .uniform01(Stream::RerouteChoice, i as u64, self.world.tick)
+                as f32;
+            self.world.patience_left[i] = self.params.reroute_interval_s * (0.5 + u);
+
+            let p = Vec2::new(self.world.pos_x[i] as f64, self.world.pos_y[i] as f64);
+            let speed = (self.world.desired_speed[i] as f64).max(0.1);
+
+            let mut best: Option<(f64, Vec2)> = None;
+            for (e, span) in self.exits.iter().enumerate() {
+                let target = self.approach_point(*span);
+                let Some(path) = mesh.find_path(p, target) else {
+                    continue;
+                };
+                let walk = cf_navmesh::path_length(&path) / speed;
+                let wait = queue[e] as f64 / capacity[e];
+                let cost = walk + wait;
+                if best.is_none_or(|(b, _)| cost < b) {
+                    best = Some((cost, span.midpoint()));
+                }
+            }
+
+            if let Some((_, goal)) = best {
+                if goal != self.routes[i].goal {
+                    changes.push((i, self.plan(p, goal, self.world.radius[i] as f64)));
+                }
+            }
+        }
+
+        for (i, r) in changes {
+            self.routes[i] = r;
         }
     }
 
