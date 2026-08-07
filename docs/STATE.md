@@ -13,7 +13,7 @@ end, the model meets its headline benchmark (82.1 p/m/min through a 1 m door
 against the Green Guide's 82), and the whole RiMEA suite runs. One calibration
 gap remains; see "Next up".
 **Last updated:** 2026-08-06 by Ramzy's session
-**Tree status:** green — 267 Rust, 49 web and 15 Python tests passing, 4 ignored
+**Tree status:** green — 269 Rust, 49 web and 21 Python tests passing, 4 ignored
 (two are measurement tools rather than assertions: the repulsion sweep and the
 scale benchmark), and one of those two is a
 diagnostic tool rather than a test. clippy clean, wasm32 builds, web typecheck
@@ -60,7 +60,7 @@ The frontend is real and drives the real engine — nothing on screen is mocked.
 
 ### Next up — pick from the top
 
-The engine is in good shape. **267 Rust, 49 web, 15 Python tests; 4 ignored** — and one of those
+The engine is in good shape. **269 Rust, 49 web, 21 Python tests; 4 ignored** — and one of those
 two is a diagnostic tool rather than a test. Every RiMEA case the engine
 is capable of satisfying, satisfies.
 
@@ -144,21 +144,20 @@ should quote 25k in-browser until someone has run it in a browser.*
 
 Ranked, what is left:
 
-1. **Wire multi-floor and import into the app.** Both work in the engine and
-   neither is reachable from the UI — `cf_sim::building` has no wasm binding and
-   nothing loads a `services/` import. Capability nobody can reach is the
-   recurring failure mode of this project; these are the two outstanding cases.
+1. **Use `BuildingSim` and the importer from the editor.** Both are now
+   reachable — a wasm binding and a CLI — but the app calls neither. The editor
+   has no floor concept and no way to open an imported venue beyond the file
+   picker. This is UI work and none of it can be verified here (no browser).
 
 2. **Measure the engine in an actual browser.** ADR 0008 puts 24k agents at
-   1.6x real time natively and infers 0.8–1.1x in wasm. Inferred, not observed.
-   Cheap to settle and it decides whether any optimisation is needed at all.
+   1.6x real time natively and *infers* 0.8–1.1x in wasm. Cheap to settle, and
+   it decides whether any optimisation is needed at all.
 
 3. **SIMD force kernel**, then **threads** (both B3). ADR 0008: the step is
    dominated by per-agent force and contact work. R2 makes both harder than
    they look — bit-identical scalar fallback, deterministic partitioning.
 
-4. **PDF vector import** (`pypdf` or `pdfminer.six` — **not** PyMuPDF, AGPL),
-   then door layers outranking gap inference in the importer.
+4. **PDF vector import** (`pypdf` or `pdfminer.six` — **not** PyMuPDF, AGPL).
 
 5. **Flow fields — deprioritised.** ~3% of a step (ADR 0008).
 
