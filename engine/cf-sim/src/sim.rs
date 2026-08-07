@@ -230,6 +230,15 @@ impl Sim {
         &self.exits
     }
 
+    /// The spatial index as of the last step.
+    ///
+    /// Exposed so a harness can ask the locomotion model what an agent senses
+    /// without rebuilding an index that would not match the one the forces
+    /// actually used.
+    pub fn spatial_grid(&self) -> &SpatialGrid {
+        &self.grid
+    }
+
     pub fn walls(&self) -> &[Segment] {
         &self.walls
     }

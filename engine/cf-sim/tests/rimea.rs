@@ -496,9 +496,10 @@ fn tc3_twenty_people_round_a_corner_without_leaving_the_corridor() {
 /// is reading the vibration. So there are two defects stacked here, in opposite
 /// directions — see `docs/06-validation.md` §4.1.
 #[test]
-#[ignore = "one repulsion constant cannot satisfy both this and doorway flow; \
-the model is deliberately tuned to the door, which is the safe side. \
--89% at 3 p/m²; see docs/06-validation.md §4.1"]
+#[ignore = "known, bounded, and conservative: -89% at 3 p/m2. The doorway is \
+correct (2.04 p/m2, 82.1 p/m/min) and the error lives only in uniform streams \
+above ~2 p/m2, which are downstream of a door that metered the crowd. Three \
+fixes swept and all trade off monotonically; see ADR 0007"]
 fn tc4_fundamental_diagram_matches_weidmann() {
     let mut failures = Vec::new();
     for d in [0.5, 1.0, 1.5, 2.0, 3.0] {

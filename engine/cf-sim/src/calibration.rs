@@ -60,6 +60,17 @@ pub struct FlowMeasurement {
     pub duration_s: f64,
     /// Persons per metre per minute.
     pub specific_flow: f64,
+    /// Mean density the sensor reported for agents at the opening, persons/m².
+    ///
+    /// The figure that actually sets their walking speed.
+    pub sensed_density: f64,
+    /// Mean density genuinely present at the opening, persons/m².
+    ///
+    /// The same neighbours counted without the heading weighting — what a
+    /// bird's-eye measurement of that patch of floor would report.
+    pub true_density: f64,
+    /// Mean speed of agents at the opening, m/s.
+    pub door_speed: f64,
     /// Worst body interpenetration seen during the discharge, metres.
     ///
     /// A doorway is where the contact solve is under the most pressure. If this
@@ -169,14 +180,63 @@ pub fn measure_doorway_flow(
     // afterwards rather than guessed in advance.
     let mut exited_at_tick: Vec<u32> = Vec::new();
     let mut max_overlap = 0.0f64;
-    for _ in 0..8000 {
+
+    // What the crowd at the opening believes, and what is actually there.
+    //
+    // A door passing the Green Guide's 82 persons/m/min should be sitting at
+    // roughly 2 persons/m², where Weidmann gives 0.61 m/s. If the sensor reads
+    // far below the true figure the agents are walking faster than the
+    // fundamental diagram allows at their real local density, and the
+    // bottleneck is not forming for the reason it appears to.
+    let (mut sensed_sum, mut true_sum, mut speed_sum, mut samples) = (0.0, 0.0, 0.0, 0u32);
+    let door = ExitSpan {
+        a: Vec2::new(mid - half, 0.0),
+        b: Vec2::new(mid + half, 0.0),
+    }
+    .segment();
+
+    for tick in 0..8000 {
         let st = sim.step();
         exited_at_tick.push(st.exited);
         max_overlap = max_overlap.max(st.max_overlap as f64);
+
+        // Sample the steady middle only, and only bodies actually at the
+        // opening — a metre back is approach, not the bottleneck.
+        if tick > 200 && tick % 10 == 0 {
+            let grid = sim.spatial_grid();
+            for i in 0..sim.world.len() {
+                if !sim.world.active[i] {
+                    continue;
+                }
+                let p = Vec2::new(sim.world.pos_x[i] as f64, sim.world.pos_y[i] as f64);
+                if door.distance_to_point(p) > 1.0 {
+                    continue;
+                }
+                let d = crate::locomotion::sense_density(
+                    &sim.world,
+                    grid,
+                    sim.walls(),
+                    &sim.params.locomotion,
+                    i,
+                );
+                sensed_sum += d.directional as f64;
+                true_sum += d.isotropic as f64;
+                speed_sum += sim.world.speed(i as u32);
+                samples += 1;
+            }
+        }
+
         if st.active == 0 {
             break;
         }
     }
+
+    let (sensed_density, true_density, door_speed) = if samples > 0 {
+        let n = samples as f64;
+        (sensed_sum / n, true_sum / n, speed_sum / n)
+    } else {
+        (0.0, 0.0, 0.0)
+    };
 
     let total = *exited_at_tick.last().unwrap_or(&0);
     if total < 10 {
@@ -185,6 +245,9 @@ pub fn measure_doorway_flow(
             count: 0,
             duration_s: 0.0,
             specific_flow: 0.0,
+            sensed_density,
+            true_density,
+            door_speed,
             max_overlap,
         };
     }
@@ -216,6 +279,9 @@ pub fn measure_doorway_flow(
         count,
         duration_s,
         specific_flow,
+        sensed_density,
+        true_density,
+        door_speed,
         max_overlap,
     }
 }
@@ -452,6 +518,14 @@ mod tests {
             m.duration_s,
             m.count,
             m.error_vs_green_guide() * 100.0
+        );
+        println!(
+            "  at the opening: sensed {:.2} p/m^2, actually {:.2} p/m^2, \
+             walking {:.2} m/s (Weidmann at the true density: {:.2} m/s)",
+            m.sensed_density,
+            m.true_density,
+            m.door_speed,
+            weidmann_speed(m.true_density)
         );
 
         assert!(m.count > 20, "too few agents passed to measure a rate");

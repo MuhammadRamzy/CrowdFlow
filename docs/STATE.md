@@ -98,33 +98,31 @@ agents then pack into a doorway far tighter than people do and flow runs up to
 directly and running *fast* there produces a number a venue gets approved on
 and then fails to achieve. Slow at 3 p/m² is the conservative error.
 
-**Two fixes have been tried and both failed. ADR 0006 has the numbers — read it
-before spending a session here.**
+**The doorway was instrumented and it is correct** — 2.04 persons/m², 82.1
+p/m/min. ADR 0007 has the numbers. That reframes the remaining gap: the error
+lives only in **uniform streams above ~2 persons/m²**, which are downstream of a
+door that already metered the crowd into them, and it is *slow* rather than
+fast, which is the conservative side for a life-safety tool.
 
-- *Anticipatory (time-to-collision) avoidance.* More of it makes doorway flow
-  **worse**, because it helps agents step around each other earlier and that
-  removes exactly the jostling holding flow to a realistic figure.
-- *Softening the repulsion falloff.* `b_agent` 0.08 → 0.55 degrades the doorway
-  monotonically (82 → 231 p/m/min) and does not improve the diagram at all. The
-  stiff short-range profile is doing something right; leave it.
+**Three fixes have now been swept and all three trade off monotonically.** Read
+ADR 0006 and ADR 0007 before spending a session here.
+
+- *Anticipatory (time-to-collision) avoidance* — makes the doorway **worse**; it
+  removes the jostling that holds flow to a realistic figure.
+- *Softening the falloff* — `b_agent` 0.08 → 0.55 degrades the doorway
+  monotonically, 82 → 231 p/m/min, and does not improve the diagram at all.
+- *Capping the repulsion* — degrades the doorway 82 → 111 while the stream
+  barely moves, 0.04 → 0.08.
+
+The measured reason they all fail: **a correct doorway and a stalled dense
+stream overlap in separation.** No function of separation alone reaches one
+without the other.
 
 Ranked, what is left:
 
-1. **Measure density and speed at the doorway itself.** Nobody has, and it is
-   the measurement that decides what to fix. A door at the correct flow should
-   be running at about 2 persons/m², where Weidmann gives 0.61 m/s. If the
-   model's door agents read much lower than that, the culprit is the
-   **directional density sensor** — an agent at an opening has genuinely clear
-   floor ahead, so it reads low and walks faster than the diagram allows at its
-   true local density. That sensor is also what fixed the corner deadlock, so it
-   cannot simply be reverted.
-
-   Do this before implementing the radius split ADR 0006 originally proposed:
-   the naive form of that (widening the separation the repulsion measures from)
-   makes the force full strength at personal-space distance instead of at
-   contact, which *increases* repulsion by about an order of magnitude at
-   3 persons/m² and makes the stream worse. ADR 0006's last two sections
-   explain.
+1. **Declare the validated envelope** as ρ ≤ 2 persons/m² and say so in the
+   compliance dossier. Close to free, honest, and it is where every figure the
+   product reports is actually computed. ADR 0007 option 3.
 
 2. **Multi-floor navigation.** Stairs now slow people down (`Zone::
    speed_multiplier` reaches the mesh), but `Sim` still holds one flat

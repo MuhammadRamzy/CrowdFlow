@@ -227,6 +227,12 @@ pub fn compute_forces(
             let ny = dy / dist;
 
             // Helbing's exponential repulsion on surface separation.
+            //
+            // Unbounded, and deliberately left so: capping it was measured and
+            // is a dead end (ADR 0007). A ceiling degrades doorway flow
+            // monotonically while barely freeing a dense stream, because the
+            // two regimes overlap in separation and neither can be reached
+            // without the other.
             let overlap = (ri + w.radius[j]) - dist;
             let mag = params.a_agent * fmath::exp(overlap / params.b_agent);
 
@@ -554,6 +560,155 @@ fn weidmann_factor(density: f32) -> f32 {
     1.0 - fmath::exp(-GAMMA * (1.0 / density - 1.0 / JAM))
 }
 
+/// What an agent's density sensor reports, and what is actually around it.
+///
+/// The two differ by design, and the difference is the whole reason the sensor
+/// works — see `directional`. Returned together so a harness can ask which of
+/// the two a behaviour is following without re-deriving either.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SensedDensity {
+    /// Persons/m², weighting each neighbour by `(1 + cos θ)/2` off the agent's
+    /// intended heading. This is what suppresses walking speed.
+    pub directional: f32,
+    /// Persons/m² counting every neighbour equally. What a bird's-eye
+    /// measurement of the same patch of floor would report.
+    pub isotropic: f32,
+    /// Walkable area of the sensing disc, m², after wall occlusion.
+    pub area: f32,
+}
+
+/// Measure the crowd around agent `i`.
+///
+/// Extracted from the force loop so it can be queried from a harness. Density
+/// sensing is the most consequential and least visible thing in the locomotion
+/// model — it decides walking speed everywhere — and until this was callable
+/// the only way to find out what an agent believed was to infer it from how
+/// fast it walked.
+pub fn sense_density(
+    w: &World,
+    grid: &SpatialGrid,
+    walls: &[Segment],
+    params: &LocomotionParams,
+    i: usize,
+) -> SensedDensity {
+    let r = params.density_sense_radius;
+    if r <= 0.0 {
+        return SensedDensity::default();
+    }
+    let r_sq = r * r;
+    let full_area = std::f32::consts::PI * r_sq;
+    let px = w.pos_x[i];
+    let py = w.pos_y[i];
+
+    // Density is sensed *in the direction the agent wants to go*, weighting
+    // each neighbour by (1 + cos θ)/2 off that heading.
+    //
+    // An isotropic count makes congestion an absorbing state: pack a crowd,
+    // every agent reads jam density, Weidmann drives desired speed to zero,
+    // nobody moves, so the density never falls and the jam is permanent. It
+    // froze RiMEA TC3, TC6 and TC12 outright, and no amount of correcting the
+    // *magnitude* of the density fixes it — the feedback loop is the problem,
+    // not the number.
+    //
+    // Real crowds drain from the front, because the person at the front has
+    // clear floor ahead however tightly packed they are behind. Weighting by
+    // heading reproduces that: someone hemmed in from behind reads a low
+    // density and walks, and the jam resolves from the leading edge.
+    //
+    // Averaged over a uniform crowd the weight is exactly ½, so normalising by
+    // half the disc leaves the fundamental diagram unchanged — this costs
+    // nothing in the calibrated regime and only bites where a jam forms.
+    //
+    // The *desired* direction, not the velocity: a stopped agent has no
+    // velocity to take a heading from, and a stopped agent is precisely the one
+    // whose density reading has to be right.
+    let dlen = fmath::hypot2(w.des_x[i], w.des_y[i]);
+    let (hx, hy) = if dlen > 1e-4 {
+        (w.des_x[i] / dlen, w.des_y[i] / dlen)
+    } else {
+        (0.0, 0.0)
+    };
+
+    // The agent occupies its own patch of floor: half a unit under the
+    // weighting above, which keeps a lone agent reading 1/area as before.
+    let mut weighted = 0.5f32;
+    let mut plain = 1.0f32;
+    grid.for_each_near(Vec2::new(px as f64, py as f64), |j| {
+        let j = j as usize;
+        if j == i || !w.active[j] {
+            return;
+        }
+        let dx = w.pos_x[j] - px;
+        let dy = w.pos_y[j] - py;
+        let dist_sq = dx * dx + dy * dy;
+        if dist_sq > r_sq {
+            return;
+        }
+        plain += 1.0;
+        if dlen <= 1e-4 || dist_sq <= 1e-12 {
+            weighted += 0.5;
+            return;
+        }
+        let inv = 1.0 / fmath::sqrt(dist_sq);
+        let cos_t = (dx * inv) * hx + (dy * inv) * hy;
+        weighted += 0.5 * (1.0 + cos_t);
+    });
+
+    // Only the *walkable* part of the disc counts.
+    //
+    // Dividing by the full πr² assumes the agent is standing in open floor. An
+    // agent in a doorway has half its disc on the far side of a wall, reads
+    // half the true density, and walks on at nearly free speed — so the one
+    // place a bottleneck must form is the one place the sensor was blind. That
+    // put four times too many people per second through a 1 m door while every
+    // other diagnostic looked healthy.
+    //
+    // A wall the agent stands square-on to occludes a half-plane, and the disc
+    // loses the circular segment beyond the chord:
+    //   A = r²·acos(d/r) − d·√(r² − d²)
+    //
+    // That only holds while the foot of the perpendicular lands *on* the wall.
+    // If the nearest point is an end of the segment, the wall stops there and
+    // occludes a wedge, not a half-plane — subtracting the full segment claims
+    // solid floor that is actually open.
+    //
+    // Which is precisely what a corner is. At the reflex corner of an
+    // L-corridor two walls both register at their shared endpoint, each
+    // over-claims, and the two compound: sensed density ran high enough to
+    // drive the Weidmann factor to zero, so desired speed became zero, so the
+    // crowd never moved and the density never fell. RiMEA TC3 froze 13 of 20
+    // agents there permanently — and a wider sensing radius, which catches more
+    // walls, made it worse rather than better.
+    //
+    // So only square-on walls count. At a corner this now under-counts slightly
+    // rather than over-counting, which costs a little accuracy in a place
+    // agents pass through and buys back the ability to move at all.
+    let p = Vec2::new(px as f64, py as f64);
+    let mut cut = 0.0f32;
+    for seg in walls {
+        let t = seg.closest_param(p);
+        if t <= 0.0 || t >= 1.0 {
+            continue;
+        }
+        let d = seg.distance_to_point(p) as f32;
+        if d >= r {
+            continue;
+        }
+        cut += r_sq * fmath::acos(d / r) - d * fmath::sqrt(r_sq - d * d);
+    }
+    // Two parallel walls closer together than the disc can still take more than
+    // all of it; a corridor narrower than 2r is real, so this floor is
+    // load-bearing, not defensive.
+    let area = (full_area - cut).max(full_area * 0.2);
+
+    SensedDensity {
+        // Half the disc, to match the half-weighting above.
+        directional: weighted / (area * 0.5),
+        isotropic: plain / area,
+        area,
+    }
+}
+
 /// Scale each agent's desired speed by the density it is walking into.
 ///
 /// # Why this exists rather than tuning the repulsion constants
@@ -581,121 +736,15 @@ pub fn apply_density_speed_limit(
     walls: &[Segment],
     params: &LocomotionParams,
 ) {
-    let r = params.density_sense_radius;
-    if r <= 0.0 || params.density_speed_coupling <= 0.0 {
+    if params.density_sense_radius <= 0.0 || params.density_speed_coupling <= 0.0 {
         return;
     }
-    let r_sq = r * r;
-    let full_area = std::f32::consts::PI * r_sq;
 
     for i in 0..w.len() {
         if !w.active[i] || !w.state[i].is_mobile() {
             continue;
         }
-        let px = w.pos_x[i];
-        let py = w.pos_y[i];
-
-        // Density is sensed *in the direction the agent wants to go*, weighting
-        // each neighbour by (1 + cos θ)/2 off that heading.
-        //
-        // An isotropic count makes congestion an absorbing state: pack a crowd,
-        // every agent reads jam density, Weidmann drives desired speed to zero,
-        // nobody moves, so the density never falls and the jam is permanent. It
-        // froze RiMEA TC3, TC6 and TC12 outright, and no amount of correcting
-        // the *magnitude* of the density fixes it — the feedback loop is the
-        // problem, not the number.
-        //
-        // Real crowds drain from the front, because the person at the front has
-        // clear floor ahead however tightly packed they are behind. Weighting by
-        // heading reproduces that: someone hemmed in from behind reads a low
-        // density and walks, and the jam resolves from the leading edge.
-        //
-        // Averaged over a uniform crowd the weight is exactly ½, so normalising
-        // by half the disc leaves the fundamental diagram unchanged — this costs
-        // nothing in the calibrated regime and only bites where a jam forms.
-        //
-        // The *desired* direction, not the velocity: a stopped agent has no
-        // velocity to take a heading from, and a stopped agent is precisely the
-        // one whose density reading has to be right.
-        let dlen = fmath::hypot2(w.des_x[i], w.des_y[i]);
-        let (hx, hy) = if dlen > 1e-4 {
-            (w.des_x[i] / dlen, w.des_y[i] / dlen)
-        } else {
-            (0.0, 0.0)
-        };
-
-        // The agent occupies its own patch of floor: half a unit under the
-        // weighting above, which keeps a lone agent reading 1/area as before.
-        let mut weighted = 0.5f32;
-        grid.for_each_near(Vec2::new(px as f64, py as f64), |j| {
-            let j = j as usize;
-            if j == i || !w.active[j] {
-                return;
-            }
-            let dx = w.pos_x[j] - px;
-            let dy = w.pos_y[j] - py;
-            let dist_sq = dx * dx + dy * dy;
-            if dist_sq > r_sq {
-                return;
-            }
-            if dlen <= 1e-4 || dist_sq <= 1e-12 {
-                weighted += 0.5;
-                return;
-            }
-            let inv = 1.0 / fmath::sqrt(dist_sq);
-            let cos_t = (dx * inv) * hx + (dy * inv) * hy;
-            weighted += 0.5 * (1.0 + cos_t);
-        });
-
-        // Only the *walkable* part of the disc counts.
-        //
-        // Dividing by the full πr² assumes the agent is standing in open floor.
-        // An agent in a doorway has half its disc on the far side of a wall,
-        // reads half the true density, and walks on at nearly free speed — so
-        // the one place a bottleneck must form is the one place the sensor was
-        // blind. That put four times too many people per second through a 1 m
-        // door while every other diagnostic looked healthy.
-        //
-        // A wall the agent stands square-on to occludes a half-plane, and the
-        // disc loses the circular segment beyond the chord:
-        //   A = r²·acos(d/r) − d·√(r² − d²)
-        //
-        // That only holds while the foot of the perpendicular lands *on* the
-        // wall. If the nearest point is an end of the segment, the wall stops
-        // there and occludes a wedge, not a half-plane — subtracting the full
-        // segment claims solid floor that is actually open.
-        //
-        // Which is precisely what a corner is. At the reflex corner of an
-        // L-corridor two walls both register at their shared endpoint, each
-        // over-claims, and the two compound: sensed density ran high enough to
-        // drive the Weidmann factor to zero, so desired speed became zero, so
-        // the crowd never moved and the density never fell. RiMEA TC3 froze 13
-        // of 20 agents there permanently — and a wider sensing radius, which
-        // catches more walls, made it worse rather than better.
-        //
-        // So only square-on walls count. At a corner this now under-counts
-        // slightly rather than over-counting, which costs a little accuracy in
-        // a place agents pass through and buys back the ability to move at all.
-        let p = Vec2::new(px as f64, py as f64);
-        let mut cut = 0.0f32;
-        for seg in walls {
-            let t = seg.closest_param(p);
-            if t <= 0.0 || t >= 1.0 {
-                continue;
-            }
-            let d = seg.distance_to_point(p) as f32;
-            if d >= r {
-                continue;
-            }
-            cut += r_sq * fmath::acos(d / r) - d * fmath::sqrt(r_sq - d * d);
-        }
-        // Two parallel walls closer together than the disc can still take more
-        // than all of it; a corridor narrower than 2r is real, so this floor is
-        // load-bearing, not defensive.
-        let area = (full_area - cut).max(full_area * 0.2);
-
-        // Half the disc, to match the half-weighting above.
-        let density = weighted / (area * 0.5);
+        let density = sense_density(w, grid, walls, params, i).directional;
         let factor = weidmann_factor(density);
         // Interpolate toward the Weidmann factor so the coupling is tunable
         // without becoming a different model at intermediate settings.
