@@ -13,7 +13,7 @@ end, the model meets its headline benchmark (82.1 p/m/min through a 1 m door
 against the Green Guide's 82), and the whole RiMEA suite runs. One calibration
 gap remains; see "Next up".
 **Last updated:** 2026-08-06 by Ramzy's session
-**Tree status:** green — 255 Rust tests and 49 web tests passing, 4 ignored
+**Tree status:** green — 267 Rust, 49 web and 15 Python tests passing, 4 ignored
 (two are measurement tools rather than assertions: the repulsion sweep and the
 scale benchmark), and one of those two is a
 diagnostic tool rather than a test. clippy clean, wasm32 builds, web typecheck
@@ -60,7 +60,7 @@ The frontend is real and drives the real engine — nothing on screen is mocked.
 
 ### Next up — pick from the top
 
-The engine is in good shape. **255 Rust tests, 49 web tests, 2 ignored** — and one of those
+The engine is in good shape. **267 Rust, 49 web, 15 Python tests; 4 ignored** — and one of those
 two is a diagnostic tool rather than a test. Every RiMEA case the engine
 is capable of satisfying, satisfies.
 
@@ -144,28 +144,39 @@ should quote 25k in-browser until someone has run it in a browser.*
 
 Ranked, what is left:
 
-1. **Multi-floor navigation.** The last structural gap in the engine. `Sim`
-   holds one flat `NavMesh` with no floor identity, so an agent cannot traverse
-   a `VerticalLink` even though stairs now slow people down.
+1. **Wire multi-floor and import into the app.** Both work in the engine and
+   neither is reachable from the UI — `cf_sim::building` has no wasm binding and
+   nothing loads a `services/` import. Capability nobody can reach is the
+   recurring failure mode of this project; these are the two outstanding cases.
 
-2. **Measure the engine in an actual browser.** Cheap, and it decides whether
-   any optimisation is needed at all. The number above is inferred, not
-   observed.
+2. **Measure the engine in an actual browser.** ADR 0008 puts 24k agents at
+   1.6x real time natively and infers 0.8–1.1x in wasm. Inferred, not observed.
+   Cheap to settle and it decides whether any optimisation is needed at all.
 
-3. **SIMD force kernel** (B3), then **threads** (B3). ADR 0008: the step is
-   dominated by per-agent force and contact work, and both of these attack that
-   directly. R2 makes both harder than they look — bit-identical scalar
-   fallback, deterministic partitioning.
+3. **SIMD force kernel**, then **threads** (both B3). ADR 0008: the step is
+   dominated by per-agent force and contact work. R2 makes both harder than
+   they look — bit-identical scalar fallback, deterministic partitioning.
 
-4. **Flow fields — deprioritised.** Measured at ~3% of a step (ADR 0008). Still
-   the right shape eventually; not what stands between this engine and its
-   numbers, and a large determinism-sensitive change for a 3% win.
+4. **PDF vector import** (`pypdf` or `pdfminer.six` — **not** PyMuPDF, AGPL),
+   then door layers outranking gap inference in the importer.
 
-5. **Floorplan import** — `services/` is an unverified sketch on a branch. The
-   whole of tracks A4 and A5.
+5. **Flow fields — deprioritised.** ~3% of a step (ADR 0008).
 
 6. Multi-select and marquee; per-agent goal chaining for multi-leg itineraries;
-   move `egressDistribution` off the main thread.
+   move `egressDistribution` off the main thread; AI raster import (A5).
+
+### What the importer does and does not do
+
+`services/` imports DXF end to end — read, calibrate, map layers, repair, emit —
+and `engine/cf-compile/tests/imported.rs` compiles its real output in Rust.
+
+Two traps are recorded in `services/README.md` and worth repeating:
+
+- **Everything after calibration is in metres.** Repair's tolerances are metric
+  and *are* its judgement; running it against raw drawing units imported a hall
+  with no doors and said nothing was wrong.
+- **Scale is never guessed.** `$INSUNITS` is frequently whatever the template
+  had, so `trust_file_units` is off by default.
 
 ### A standing caveat: none of the UI has been driven
 

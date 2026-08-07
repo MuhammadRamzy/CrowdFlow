@@ -158,16 +158,16 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [ ] Scenario manager (duplicate, tag, compare)
 
 ### A4 — Deterministic import (W9–W14)
-- [ ] DXF ingest (`ezdxf`), blocks/xrefs/inserts
+- [~] DXF ingest (`ezdxf`) — lines, polylines, arcs, circles; blocks/xrefs/inserts not expanded
 - [ ] Vector PDF ingest (`pypdfium2`)
 - [ ] SVG ingest
-- [ ] Layer mapping UI + heuristic seeding + per-org persistence
-- [ ] Topology repair: dedupe, dominant direction, endpoint clustering, collinear merge
-- [ ] Topology repair: L/T junction closing as min-cost assignment
+- [~] Layer mapping — heuristic seeding and explicit mapping done; no UI, no per-org persistence
+- [x] Topology repair: dedupe, dominant direction, endpoint clustering, collinear merge
+- [~] Topology repair: junction closing — greedy nearest-intersection, not min-cost assignment
 - [ ] Topology repair: sliver removal, planar arrangement, face → rooms
-- [ ] Opening inference from wall gaps
+- [x] Opening inference from wall gaps
 - [ ] Wall thickness inference from parallel pairs
-- [ ] Scale calibration (header / OCR / door prior / manual two-point)
+- [~] Scale calibration — header, door prior and manual two-point; no OCR
 - [ ] Review UI: proposal layer, confidence bands, accept/reject/edit diff
 
 ### A5 — AI raster import (W15–W26)
