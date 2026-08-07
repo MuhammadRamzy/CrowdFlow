@@ -13,7 +13,9 @@ end, the model meets its headline benchmark (82.1 p/m/min through a 1 m door
 against the Green Guide's 82), and the whole RiMEA suite runs. One calibration
 gap remains; see "Next up".
 **Last updated:** 2026-08-06 by Ramzy's session
-**Tree status:** green — 255 Rust tests and 49 web tests passing, 2 ignored, and one of those two is a
+**Tree status:** green — 255 Rust tests and 49 web tests passing, 4 ignored
+(two are measurement tools rather than assertions: the repulsion sweep and the
+scale benchmark), and one of those two is a
 diagnostic tool rather than a test. clippy clean, wasm32 builds, web typecheck
 and production build clean.
 
@@ -118,25 +120,52 @@ The measured reason they all fail: **a correct doorway and a stalled dense
 stream overlap in separation.** No function of separation alone reaches one
 without the other.
 
+### Scale: measured, and it meets the number
+
+`cargo test -p cf-sim --release --test scale -- --ignored --nocapture`
+
+| agents | ms/step | µs/agent | × real time |
+|---|---|---|---|
+| 4,656 | 5.79 | 1.24 | 8.6 |
+| 9,384 | 11.39 | 1.21 | 4.4 |
+| 24,089 | 31.10 | 1.29 | **1.6** |
+
+Linear in agent count — 1.2 µs/agent across a 64× range, so the spatial grid is
+working and there is no O(n²) waiting at scale.
+
+**The budget is the 50 ms tick, not a 16.7 ms frame.** Physics runs at 20 Hz and
+rendering interpolates between ticks rather than driving them. Measuring against
+a frame understates the engine threefold; ADR 0008 records that mistake because
+it is an easy one to repeat.
+
+**But this is native.** Wasm typically runs 1.5–2× slower, putting 24k at
+roughly 0.8–1.1× real time in a browser — at or just under the line. *Nobody
+should quote 25k in-browser until someone has run it in a browser.*
+
 Ranked, what is left:
 
-1. **Multi-floor navigation.** Stairs slow people down, but `Sim` holds one
-   flat `NavMesh` with no floor identity, so an agent cannot traverse a
-   `VerticalLink`. `docs/06-validation.md` §3 needs this, and it is the last
-   structural gap in the engine.
+1. **Multi-floor navigation.** The last structural gap in the engine. `Sim`
+   holds one flat `NavMesh` with no floor identity, so an agent cannot traverse
+   a `VerticalLink` even though stairs now slow people down.
 
-2. **Flow fields** to replace per-agent A*. Matters more than it did:
-   `reconsider_exits` issues a path query per exit per reconsideration, and
-   `egressDistribution` now runs the whole scenario ten times.
+2. **Measure the engine in an actual browser.** Cheap, and it decides whether
+   any optimisation is needed at all. The number above is inferred, not
+   observed.
 
-3. **Move `egressDistribution` off the main thread.** Ten runs is synchronous
-   and blocks while the report opens. Fine at 500 agents, not at 5,000.
+3. **SIMD force kernel** (B3), then **threads** (B3). ADR 0008: the step is
+   dominated by per-agent force and contact work, and both of these attack that
+   directly. R2 makes both harder than they look — bit-identical scalar
+   fallback, deterministic partitioning.
 
-4. **Floorplan import** — `services/` is an unverified sketch on a branch. The
+4. **Flow fields — deprioritised.** Measured at ~3% of a step (ADR 0008). Still
+   the right shape eventually; not what stands between this engine and its
+   numbers, and a large determinism-sensitive change for a 3% win.
+
+5. **Floorplan import** — `services/` is an unverified sketch on a branch. The
    whole of tracks A4 and A5.
 
-5. Multi-select and marquee; per-agent goal chaining so an itinerary can have
-   more than one leg.
+6. Multi-select and marquee; per-agent goal chaining for multi-leg itineraries;
+   move `egressDistribution` off the main thread.
 
 ### A standing caveat: none of the UI has been driven
 
