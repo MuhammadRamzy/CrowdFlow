@@ -641,6 +641,7 @@ def repair_walls(
        same door twice and put two openings in one wall.
     9. **chain** into polylines.
     """
+    report.input_segments = len(wall_segments)
     segs, dropped = drop_short(wall_segments, opts.min_segment_m)
     report.dropped_short += dropped
 

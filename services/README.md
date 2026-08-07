@@ -11,6 +11,26 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
+## Import a drawing
+
+```bash
+python3 -m importer plan.dxf --list-layers          # what is in the file
+python3 -m importer plan.dxf --scale mm \
+        --layer A-WALL=wall --layer A-DOOR=door \
+        -o venue.json                               # import it
+```
+
+The JSON loads straight into the editor. Exits non-zero on any refusal, so it
+composes. `--list-layers` deliberately works *before* a scale is known: deciding
+which layer is the wall layer is how a user gets far enough to answer the scale
+question, and demanding it first is a loop with no way in.
+
+If you do not know the units, measure something you do know:
+
+```bash
+python3 -m importer plan.dxf --calibrate 0 0 20000 0 20 --layer A-WALL=wall
+```
+
 ## Commands
 
 ```bash
