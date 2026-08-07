@@ -343,10 +343,16 @@ impl Simulation {
         Ok(out)
     }
 
-    /// Place everyone whose arrival time has come.
+    /// Apply anything the scenario schedules for now: doorway closures first,
+    /// then arrivals.
+    ///
+    /// Closures first so nobody is admitted through a door that shut this same
+    /// tick, and so an agent placed this tick plans against the geometry it
+    /// will actually walk through.
     fn admit_arrivals(&mut self) {
         let now = self.sim.world.time;
         if let Some(r) = self.runner.as_mut() {
+            r.apply_events(&mut self.sim, now);
             r.pump(&mut self.sim, now);
         }
     }

@@ -1135,3 +1135,103 @@ fn tc12_two_streams_merge_without_starving_either_branch() {
         share * 100.0
     );
 }
+
+// ---------------------------------------------------------------------------
+// Blocked exits — not a RiMEA case, but the question the tool exists to answer
+// ---------------------------------------------------------------------------
+
+/// Closing a doorway mid-run diverts the crowd through the other one.
+///
+/// This is the scenario a fire-safety engineer cares about most and the one a
+/// static occupant-load calculation cannot answer: the nearest exit is blocked
+/// part-way through the evacuation, and the question is whether the remaining
+/// door copes.
+///
+/// The check is that everyone still gets out **and leaves through the door that
+/// is still open**. Dropping a span from the exit set alone would pass a
+/// weaker version of this while agents walked through the gap and off the mesh,
+/// so the closed doorway is also asserted to have become a wall.
+#[test]
+fn a_closed_doorway_diverts_the_crowd_to_the_other_exit() {
+    // A 20 x 10 hall with a 2 m exit at each end of the south wall.
+    let pts = vec![
+        Vec2::new(0.0, 0.0),
+        Vec2::new(2.0, 0.0),
+        Vec2::new(4.0, 0.0),
+        Vec2::new(16.0, 0.0),
+        Vec2::new(18.0, 0.0),
+        Vec2::new(20.0, 0.0),
+        Vec2::new(20.0, 10.0),
+        Vec2::new(0.0, 10.0),
+    ];
+    let doors = [(1usize, 2usize), (3usize, 4usize)];
+    let m = mesh(&pts, &ring_walls(8, &doors), &doors);
+    let west = pts[1].lerp(pts[2], 0.5);
+    let mut sim = Sim::new(m, exits_of(&pts, &doors), SimParams::default(), 20260803);
+
+    // Packed into the western third, so the west door is nearest for all of
+    // them — and it is the one that gets shut.
+    let mut n = 0;
+    for row in 0..10 {
+        for col in 0..10 {
+            sim.spawn_to_nearest_exit(person(
+                1.0 + col as f64 * 0.6,
+                1.0 + row as f64 * 0.6,
+                RIMEA_SPEED,
+            ));
+            n += 1;
+        }
+    }
+
+    // Let the crowd commit to the west door before shutting it.
+    for _ in 0..200 {
+        sim.step();
+    }
+    let before = sim.stats().exited;
+    assert!(before > 0, "nobody reached the west door in 10 s");
+
+    // Who is still inside when it shuts. Agents that had already left used the
+    // west door legitimately, and a despawned agent keeps its last position, so
+    // checking everyone at the end would flag them.
+    let still_in: Vec<usize> = (0..sim.world.len())
+        .filter(|i| sim.world.active[*i])
+        .collect();
+
+    let walls_before = sim.walls().len();
+    assert!(sim.close_exit(0), "the west exit should close");
+    assert_eq!(
+        sim.walls().len(),
+        walls_before + 1,
+        "a closed doorway must become a wall, not just leave the exit set"
+    );
+    assert_eq!(sim.exits().len(), 1, "one exit should remain");
+
+    for _ in 0..12000 {
+        sim.step();
+        if sim.stats().active == 0 {
+            break;
+        }
+    }
+
+    let st = sim.stats();
+    println!(
+        "blocked exit: {} of {n} out, {} escaped the mesh",
+        st.exited, st.escaped
+    );
+
+    assert_eq!(
+        st.active, 0,
+        "{} agents never found the other door",
+        st.active
+    );
+    assert_eq!(st.escaped, 0, "agents leaked through the sealed doorway");
+
+    // Everyone still inside at the closure must have left by the east door.
+    for i in still_in {
+        let x = sim.world.pos_x[i] as f64;
+        assert!(
+            (x - west.x).abs() > 3.0,
+            "agent {i} ended at x = {x:.2}, at the door that was shut"
+        );
+    }
+}

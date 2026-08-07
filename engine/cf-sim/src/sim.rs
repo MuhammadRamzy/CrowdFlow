@@ -230,6 +230,77 @@ impl Sim {
         &self.exits
     }
 
+    /// Shut a doorway mid-run.
+    ///
+    /// *What if this exit is blocked* is the question a fire-safety engineer
+    /// actually asks, and it is the one thing a static analysis cannot answer.
+    ///
+    /// Dropping the span from `exits` is not enough. The doorway edge is
+    /// *unconstrained* in the triangulation — that is what makes it a doorway —
+    /// so agents would keep walking through the gap and straight off the mesh,
+    /// where the escape recovery would drag them back in a loop. The edge has
+    /// to become a wall: put it back in the constraint set, rebuild adjacency
+    /// and portals so pathfinding stops routing through it, and add the segment
+    /// to the wall list so the physics pushes bodies off it.
+    ///
+    /// Every route is then re-planned, because any of them may have been
+    /// threaded through the opening that just closed. That is O(agents × search)
+    /// in one tick, which is affordable for an event that happens a handful of
+    /// times in a run and would not be if it happened every tick.
+    ///
+    /// Returns false if the index is out of range or the edge is not in the
+    /// mesh — a caller asking to close something that does not exist should
+    /// find out, not be quietly ignored.
+    pub fn close_exit(&mut self, index: usize) -> bool {
+        if index >= self.exits.len() {
+            return false;
+        }
+        let span = self.exits[index];
+        let Some(mesh) = self.mesh.as_mut() else {
+            return false;
+        };
+
+        // Find the mesh vertices at the ends of the span.
+        let find = |p: Vec2| mesh.tri.points.iter().position(|q| q.distance(p) < 1e-6);
+        let (Some(a), Some(b)) = (find(span.a), find(span.b)) else {
+            return false;
+        };
+
+        mesh.tri.constraints.insert(cf_navmesh::edge_key(a, b));
+        mesh.tri.rebuild_adjacency();
+        // Portals are derived from adjacency, so the mesh has to be rebuilt for
+        // pathfinding to see the new wall.
+        let rebuilt = NavMesh::with_regions(mesh.tri.clone(), mesh.regions.clone());
+        self.mesh = Some(rebuilt);
+
+        self.walls.push(span.segment());
+        self.exits.remove(index);
+
+        // Anyone routed through the closed door needs a new plan. Agents whose
+        // route did not touch it get the same answer back.
+        let goals: Vec<(usize, Vec2, f64)> = (0..self.world.len())
+            .filter(|i| self.world.active[*i])
+            .map(|i| {
+                (
+                    i,
+                    Vec2::new(self.world.pos_x[i] as f64, self.world.pos_y[i] as f64),
+                    self.world.radius[i] as f64,
+                )
+            })
+            .collect();
+        for (i, from, r) in goals {
+            // With no exit left reachable the old route is kept rather than
+            // cleared: a stale target at least keeps the agent walking toward
+            // where a door used to be, which is what a person who has not yet
+            // noticed would do. Clearing it would freeze them on the spot.
+            if let Some(g) = self.nearest_exit(from) {
+                self.routes[i] = self.plan(from, g, r);
+            }
+            self.stuck_ticks[i] = 0;
+        }
+        true
+    }
+
     /// The spatial index as of the last step.
     ///
     /// Exposed so a harness can ask the locomotion model what an agent senses

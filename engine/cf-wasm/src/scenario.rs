@@ -29,7 +29,7 @@
 
 use cf_compile::FloorMesh;
 use cf_geom::Vec2;
-use cf_schema::scenario::{Arrival, Goal, Population, ScenarioDoc};
+use cf_schema::scenario::{Arrival, EventKind, Goal, Population, ScenarioDoc};
 use cf_schema::venue::VenueDoc;
 use cf_schema::Polygon;
 use cf_sim::world::{AgentState, SpawnParams};
@@ -191,6 +191,22 @@ pub struct ScenarioRunner {
     /// an entrance is not an egress route in this scenario, and leaving it in
     /// would delete arrivals the instant they appeared.
     entry_doors: Vec<usize>,
+    /// Doorways due to be shut, sorted by time, with a cursor into them.
+    ///
+    /// Held as the doorway's *endpoints* rather than an index into `Sim::exits`,
+    /// because closing one removes it from that list and renumbers everything
+    /// after it. Two closures in a run would then shut the wrong door, and the
+    /// run would still look plausible.
+    closures: Vec<Closure>,
+    closure_cursor: usize,
+}
+
+/// A doorway scheduled to shut, identified by where it is.
+#[derive(Clone, Copy, Debug)]
+struct Closure {
+    at_s: f64,
+    a: Vec2,
+    b: Vec2,
 }
 
 impl ScenarioRunner {
@@ -223,10 +239,34 @@ impl ScenarioRunner {
             .map(|z| (z.id.as_str(), &z.polygon))
             .collect();
 
-        if !doc.events.is_empty() {
+        // Timed events. Only doorway closures are acted on; the rest still get
+        // reported, because a field that round-trips and is quietly ignored
+        // makes the control that edits it a lie.
+        let mut closures: Vec<Closure> = Vec::new();
+        let mut unhandled = 0usize;
+        for ev in &doc.events {
+            match &ev.event {
+                EventKind::CloseOpening { target } => match door_of.get(target.as_str()) {
+                    Some(&i) => {
+                        let d = &mesh.doors[i];
+                        closures.push(Closure {
+                            at_s: ev.at_s,
+                            a: d.a,
+                            b: d.b,
+                        });
+                    }
+                    None => notes.push(format!(
+                        "event at {:.0} s closes opening '{}', which is not on this floor.",
+                        ev.at_s, target
+                    )),
+                },
+                _ => unhandled += 1,
+            }
+        }
+        closures.sort_by(|x, y| x.at_s.total_cmp(&y.at_s));
+        if unhandled > 0 {
             notes.push(format!(
-                "{} timed event(s) are not applied — the engine has no event queue yet.",
-                doc.events.len()
+                "{unhandled} timed event(s) are not applied — only doorway closures are modelled."
             ));
         }
 
@@ -352,6 +392,8 @@ impl ScenarioRunner {
             rng,
             unplaced: 0,
             entry_doors,
+            closures,
+            closure_cursor: 0,
         }
     }
 
@@ -392,6 +434,41 @@ impl ScenarioRunner {
     /// An arrival whose spot is occupied is *deferred*, not dropped: a crowd
     /// arriving faster than a doorway can absorb should queue outside it, which
     /// is exactly the bottleneck a planner is looking for.
+    /// Shut any doorway whose closure time has passed.
+    ///
+    /// Separate from arrivals because it is not one: `pump` returns how many
+    /// people were admitted, and folding a structural change to the venue into
+    /// that count would hide it. Returns how many doorways closed.
+    pub fn apply_events(&mut self, sim: &mut Sim, now: f64) -> u32 {
+        let mut closed = 0;
+        while self.closure_cursor < self.closures.len()
+            && self.closures[self.closure_cursor].at_s <= now
+        {
+            let c = self.closures[self.closure_cursor];
+            self.closure_cursor += 1;
+
+            // Match by position: the index into `Sim::exits` shifts as doors
+            // close, but a doorway does not move.
+            let found = sim
+                .exits()
+                .iter()
+                .position(|e| e.a.distance(c.a) < 1e-6 && e.b.distance(c.b) < 1e-6);
+            match found {
+                Some(i) => {
+                    if sim.close_exit(i) {
+                        closed += 1;
+                    }
+                }
+                None => self.notes.push(format!(
+                    "a doorway due to close at {:.0} s was not in the exit set — \
+                     it may already be shut, or be in use as an entrance.",
+                    c.at_s
+                )),
+            }
+        }
+        closed
+    }
+
     pub fn pump(&mut self, sim: &mut Sim, now: f64) -> u32 {
         let mut due: Vec<Planned> = std::mem::take(&mut self.deferred);
         while self.cursor < self.planned.len() && self.planned[self.cursor].at_s <= now {

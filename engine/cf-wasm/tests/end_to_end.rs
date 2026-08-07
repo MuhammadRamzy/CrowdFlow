@@ -410,6 +410,49 @@ fn a_scenario_run_is_reproducible_from_its_seed() {
 /// is asserted in `cf_wasm::scenario` instead — see
 /// `unsupported_authoring_is_reported_rather_than_ignored`. The binding here
 /// does nothing but serialise that slice.
+/// A scheduled closure actually shuts a door mid-run.
+///
+/// This is the question the tool exists to answer and the one a static
+/// occupant-load calculation cannot: the nearest exit is blocked part-way
+/// through, and does the remaining door cope. It is asserted through the
+/// binding because that is the path the editor takes.
+#[test]
+fn a_scheduled_closure_shuts_a_door_mid_run() {
+    let v = CompiledVenue::from_json(&fixture()).expect("compiles");
+    let doc = scenario_json(150, "").replace(
+        r#""events": [],"#,
+        r#""events": [{"atS":8.0,"kind":"closeOpening","target":"op_west_door"}],"#,
+    );
+    let mut sim = Simulation::from_scenario(&v, 0, &doc).expect("plans");
+
+    // Before the closure both doors are live.
+    sim.step_many(20);
+    let early = sim.exited_count();
+
+    // Past the closure time, and then to the end.
+    for _ in 0..8000 {
+        sim.step();
+        if sim.active_count() == 0 && sim.pending_count() == 0 {
+            break;
+        }
+    }
+
+    assert_eq!(
+        sim.active_count(),
+        0,
+        "the hall never emptied after a closure"
+    );
+    assert!(
+        sim.exited_count() > early,
+        "nobody left after the door shut — the crowd did not divert"
+    );
+    assert_eq!(
+        sim.exited_count() + sim.unplaced_count(),
+        150,
+        "agents went missing across the closure"
+    );
+}
+
 #[test]
 fn an_unacted_on_event_still_plans_rather_than_failing() {
     let v = CompiledVenue::from_json(&fixture()).expect("compiles");
@@ -418,7 +461,7 @@ fn an_unacted_on_event_still_plans_rather_than_failing() {
     // unsupported field fatal rather than reported.
     let with_event = scenario_json(50, "").replace(
         r#""events": [],"#,
-        r#""events": [{"atS":30.0,"kind":"closeOpening","target":"op_south"}],"#,
+        r#""events": [{"atS":30.0,"kind":"alarm"}],"#,
     );
     let mut sim = Simulation::from_scenario(&v, 0, &with_event).expect("plans despite the event");
     sim.step_many(50);
