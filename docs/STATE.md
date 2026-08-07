@@ -13,7 +13,7 @@ end, the model meets its headline benchmark (82.1 p/m/min through a 1 m door
 against the Green Guide's 82), and the whole RiMEA suite runs. One calibration
 gap remains; see "Next up".
 **Last updated:** 2026-08-06 by Ramzy's session
-**Tree status:** green — 274 Rust, 49 web and 30 Python tests passing, 4 ignored
+**Tree status:** green — 275 Rust, 49 web and 38 Python tests passing, 4 ignored
 (two are measurement tools rather than assertions: the repulsion sweep and the
 scale benchmark), and one of those two is a
 diagnostic tool rather than a test. clippy clean, wasm32 builds, web typecheck
@@ -60,7 +60,7 @@ The frontend is real and drives the real engine — nothing on screen is mocked.
 
 ### Next up — pick from the top
 
-The engine is in good shape. **274 Rust, 49 web, 30 Python tests; 4 ignored** — and one of those
+The engine is in good shape. **275 Rust, 49 web, 38 Python tests; 4 ignored** — and one of those
 two is a diagnostic tool rather than a test. Every RiMEA case the engine
 is capable of satisfying, satisfies.
 
@@ -160,9 +160,8 @@ Ranked, what is left:
 4. **Flow fields — deprioritised.** ~3% of a step (ADR 0008).
 
 5. Multi-select and marquee; move `egressDistribution` off the main thread;
-   AI raster import (A5); multi-floor *import* (the engine has floors, the
-   importer emits one); an itinerary builder in the panel — the engine follows
-   multi-leg plans now and the UI can only author one step.
+   AI raster import (A5); an itinerary builder in the panel — the engine
+   follows multi-leg plans now and the UI can only author one step.
 
 ### What the importer does and does not do
 

@@ -30,7 +30,12 @@ def build_parser() -> argparse.ArgumentParser:
             "wrong size, and nothing about the result looks wrong."
         ),
     )
-    p.add_argument("drawing", type=Path, help="a .dxf or vector .pdf file")
+    p.add_argument(
+        "drawing",
+        type=Path,
+        nargs="?",
+        help="a .dxf or vector .pdf file (a single-floor venue)",
+    )
     p.add_argument(
         "-o",
         "--out",
@@ -66,6 +71,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="map a layer, e.g. A-WALL=wall. Repeatable. Unmapped layers use "
         "heuristics; --list-layers shows what those would decide.",
     )
+    building = p.add_argument_group("multi-storey")
+    building.add_argument(
+        "--floor",
+        action="append",
+        default=[],
+        metavar="ID=FILE[@ELEV]",
+        help="a storey and its drawing, e.g. f1=first.dxf@4.0. Repeatable. "
+        "Replaces the positional drawing argument.",
+    )
+    building.add_argument(
+        "--stair",
+        action="append",
+        default=[],
+        metavar="X,Y[,WIDTH[,FROM,TO]]",
+        help="a staircase at X,Y metres joining two floors (default the first "
+        "two). Stairs are never inferred — a stair invented in the wrong place "
+        "gives a building an escape route it does not have.",
+    )
+
     p.add_argument(
         "--page",
         type=int,
@@ -102,14 +126,22 @@ def main(argv: list[str] | None = None) -> int:
         print("--layer expects NAME=ROLE", file=sys.stderr)
         return 2
 
+    # A building has no single drawing to take its name from.
+    stem = args.drawing.stem if args.drawing is not None else "building"
     opts = ImportOptions(
         layers=LayerMapping.from_pairs(pairs),
         scale=_scale_from(args),
         trust_file_units=args.trust_file_units,
-        name=args.name or args.drawing.stem,
-        venue_id=f"vnu_{args.drawing.stem}",
+        name=args.name or stem,
+        venue_id=f"vnu_{stem}",
         page=args.page,
     )
+
+    if args.floor:
+        return _import_building(args, opts)
+    if args.drawing is None:
+        print("give a drawing, or --floor ID=FILE for a building", file=sys.stderr)
+        return 2
 
     # Listing layers must work *before* a scale is known — deciding which layer
     # is the wall layer is how a user gets far enough to answer the scale
@@ -136,6 +168,60 @@ def main(argv: list[str] | None = None) -> int:
         f"{'' if result.scale.confirmed else ', UNCONFIRMED'})"
     )
     print(f"  {result.repair}")
+    for w in result.warnings:
+        print(f"  warning: {w}", file=sys.stderr)
+    return 0
+
+
+def _import_building(args: argparse.Namespace, opts: ImportOptions) -> int:
+    """Import several drawings as the storeys of one building."""
+    from importer import FloorSpec, StairSpec, import_building
+
+    floors: list[FloorSpec] = []
+    for spec in args.floor:
+        if "=" not in spec:
+            print("--floor expects ID=FILE[@ELEV]", file=sys.stderr)
+            return 2
+        fid, rest = spec.split("=", 1)
+        path_text, _, elev_text = rest.partition("@")
+        try:
+            elev = float(elev_text) if elev_text else float(len(floors)) * 3.5
+        except ValueError:
+            print(f"--floor {spec}: elevation is not a number", file=sys.stderr)
+            return 2
+        floors.append(FloorSpec(fid, fid, Path(path_text), elev))
+
+    stairs: list[StairSpec] = []
+    for spec in args.stair:
+        parts = spec.split(",")
+        if len(parts) not in (2, 3, 5):
+            print("--stair expects X,Y[,WIDTH[,FROM,TO]]", file=sys.stderr)
+            return 2
+        try:
+            x, y = float(parts[0]), float(parts[1])
+            width = float(parts[2]) if len(parts) > 2 else 1.2
+        except ValueError:
+            print(f"--stair {spec}: coordinates are not numbers", file=sys.stderr)
+            return 2
+        ends = (
+            (parts[3], parts[4])
+            if len(parts) == 5
+            else (floors[0].floor_id, floors[1].floor_id if len(floors) > 1 else floors[0].floor_id)
+        )
+        stairs.append(StairSpec(x=x, y=y, width_m=width, floors=ends))
+
+    try:
+        result = import_building(floors, stairs, opts)
+    except ImporterError as exc:
+        print(f"{exc}", file=sys.stderr)
+        return 1
+
+    out = args.out or Path("building.venue.json")
+    out.write_text(result.venue.model_dump_json(indent=2, exclude_none=True) + "\n")
+    print(
+        f"{out}: {len(result.venue.floors)} floor(s), {result.wall_count} wall(s), "
+        f"{result.opening_count} opening(s), {len(result.venue.links or [])} stair(s)"
+    )
     for w in result.warnings:
         print(f"  warning: {w}", file=sys.stderr)
     return 0

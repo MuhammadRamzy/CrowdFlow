@@ -1,0 +1,268 @@
+{
+  "floors": [
+    {
+      "elevationM": 0.0,
+      "id": "f0",
+      "name": "Ground",
+      "openings": [
+        {
+          "capacityFactor": 1.0,
+          "id": "f0_op_0000",
+          "isFireExit": false,
+          "kind": "door",
+          "provenance": {
+            "confidence": 0.65,
+            "source": "import",
+            "sourceFile": "hall-mm.dxf"
+          },
+          "swing": "both",
+          "t": 0.488654,
+          "wall": "f0_w_0000",
+          "widthM": 1.0
+        }
+      ],
+      "walls": [
+        {
+          "id": "f0_w_0000",
+          "kind": "structural",
+          "layer": "A-WALL",
+          "permeable": false,
+          "polyline": [
+            [
+              -0.0,
+              12.0015
+            ],
+            [
+              0.0,
+              0.0
+            ],
+            [
+              20.0,
+              0.0
+            ],
+            [
+              20.0,
+              12.0
+            ]
+          ],
+          "provenance": {
+            "confidence": 0.7,
+            "source": "import",
+            "sourceFile": "hall-mm.dxf"
+          },
+          "thicknessM": 0.2
+        },
+        {
+          "id": "f0_w_0001",
+          "kind": "structural",
+          "layer": "A-WALL",
+          "permeable": false,
+          "polyline": [
+            [
+              -0.0,
+              12.0015
+            ],
+            [
+              20.0,
+              12.0
+            ]
+          ],
+          "provenance": {
+            "confidence": 0.7,
+            "source": "import",
+            "sourceFile": "hall-mm.dxf"
+          },
+          "thicknessM": 0.2
+        },
+        {
+          "id": "f0_w_0002",
+          "kind": "structural",
+          "layer": "A-WALL",
+          "permeable": false,
+          "polyline": [
+            [
+              10.0,
+              7.5
+            ],
+            [
+              11.5,
+              6.0
+            ]
+          ],
+          "provenance": {
+            "confidence": 0.7,
+            "source": "import",
+            "sourceFile": "hall-mm.dxf"
+          },
+          "thicknessM": 0.2
+        }
+      ],
+      "zones": []
+    },
+    {
+      "elevationM": 4.0,
+      "id": "f1",
+      "name": "First",
+      "openings": [
+        {
+          "capacityFactor": 1.0,
+          "id": "f1_op_0000",
+          "isFireExit": false,
+          "kind": "door",
+          "provenance": {
+            "confidence": 0.65,
+            "source": "import",
+            "sourceFile": "hall-mm.dxf"
+          },
+          "swing": "both",
+          "t": 0.488654,
+          "wall": "f1_w_0000",
+          "widthM": 1.0
+        }
+      ],
+      "walls": [
+        {
+          "id": "f1_w_0000",
+          "kind": "structural",
+          "layer": "A-WALL",
+          "permeable": false,
+          "polyline": [
+            [
+              -0.0,
+              12.0015
+            ],
+            [
+              0.0,
+              0.0
+            ],
+            [
+              20.0,
+              0.0
+            ],
+            [
+              20.0,
+              12.0
+            ]
+          ],
+          "provenance": {
+            "confidence": 0.7,
+            "source": "import",
+            "sourceFile": "hall-mm.dxf"
+          },
+          "thicknessM": 0.2
+        },
+        {
+          "id": "f1_w_0001",
+          "kind": "structural",
+          "layer": "A-WALL",
+          "permeable": false,
+          "polyline": [
+            [
+              -0.0,
+              12.0015
+            ],
+            [
+              20.0,
+              12.0
+            ]
+          ],
+          "provenance": {
+            "confidence": 0.7,
+            "source": "import",
+            "sourceFile": "hall-mm.dxf"
+          },
+          "thicknessM": 0.2
+        },
+        {
+          "id": "f1_w_0002",
+          "kind": "structural",
+          "layer": "A-WALL",
+          "permeable": false,
+          "polyline": [
+            [
+              10.0,
+              7.5
+            ],
+            [
+              11.5,
+              6.0
+            ]
+          ],
+          "provenance": {
+            "confidence": 0.7,
+            "source": "import",
+            "sourceFile": "hall-mm.dxf"
+          },
+          "thicknessM": 0.2
+        }
+      ],
+      "zones": []
+    }
+  ],
+  "id": "vnu_import",
+  "links": [
+    {
+      "clearWidthM": 1.4,
+      "direction": "both",
+      "ends": [
+        {
+          "floor": "f0",
+          "footprint": [
+            [
+              14.3,
+              5.3
+            ],
+            [
+              15.7,
+              5.3
+            ],
+            [
+              15.7,
+              6.7
+            ],
+            [
+              14.3,
+              6.7
+            ]
+          ]
+        },
+        {
+          "floor": "f1",
+          "footprint": [
+            [
+              14.3,
+              5.3
+            ],
+            [
+              15.7,
+              5.3
+            ],
+            [
+              15.7,
+              6.7
+            ],
+            [
+              14.3,
+              6.7
+            ]
+          ]
+        }
+      ],
+      "flowRatePpmm": 66.0,
+      "id": "lnk_000",
+      "kind": "stair",
+      "widthM": 1.4
+    }
+  ],
+  "name": "Imported venue",
+  "provenance": {
+    "confidence": 1.0,
+    "source": "import",
+    "sourceFile": "hall-mm.dxf"
+  },
+  "routing": {},
+  "schemaVersion": "cfs.venue/1.0",
+  "units": {
+    "length": "m"
+  }
+}

@@ -28,14 +28,24 @@ from importer.errors import (
     ScaleUnknownError,
     UnsupportedFileError,
 )
-from importer.pipeline import ImportOptions, ImportResult, import_file
+from importer.pipeline import (
+    FloorSpec,
+    ImportOptions,
+    ImportResult,
+    StairSpec,
+    import_building,
+    import_file,
+)
 
 __all__ = [
+    "FloorSpec",
     "ImportOptions",
     "ImportResult",
     "ImporterError",
     "NoGeometryError",
     "ScaleUnknownError",
+    "StairSpec",
     "UnsupportedFileError",
+    "import_building",
     "import_file",
 ]

@@ -31,6 +31,27 @@ If you do not know the units, measure something you do know:
 python3 -m importer plan.dxf --calibrate 0 0 20000 0 20 --layer A-WALL=wall
 ```
 
+## A building, not a floor
+
+```bash
+python3 -m importer --scale mm --layer A-WALL=wall \
+    --floor f0=ground.dxf --floor f1=first.dxf@4.0 \
+    --stair 15,6,1.4 -o building.venue.json
+```
+
+Each drawing goes through exactly the per-floor path, so a two-storey import
+cannot drift from a one-storey import in how it repairs geometry. Element ids
+are prefixed per floor — two storeys from the same drawing both call their first
+wall `w_0000`, and unprefixed the compiler sees one venue with duplicate ids and
+openings attaching to the wrong storey.
+
+**Stairs are never inferred.** A drawing marks a stair with a symbol that varies
+by office and by decade, and a stair invented in the wrong place gives a
+building an escape route it does not have — an error in the optimistic
+direction, on the figure a venue is approved against. You say where it is. A
+stair naming a floor that is not in the set is reported rather than dropped
+quietly, and a multi-storey building with no stairs at all says so.
+
 ## Commands
 
 ```bash
@@ -121,8 +142,6 @@ this job. `pdfminer.six` is MIT and is what the PDF path uses.
 ## Not built yet
 
 - **AI raster import** (track A5) — photographed and scanned plans.
-- **Multi-floor.** Every import produces one floor, `f0`. The engine supports
-  more (`cf_sim::building`); the importer does not populate it.
 
 ## The cross-track test
 

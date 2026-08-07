@@ -48,3 +48,50 @@ fn a_document_from_the_importer_compiles_and_is_simulable() {
         g.warnings
     );
 }
+
+/// A two-storey import compiles, and its staircase resolves to a route.
+///
+/// The importer and the engine were built against the same schema but by
+/// different hands and in different languages. A stair that the importer emits
+/// and the compiler cannot resolve leaves upper storeys with no way out — and
+/// the run still finishes, reporting an evacuation time for a building that
+/// could not have achieved it.
+#[test]
+fn a_two_storey_import_compiles_with_its_stair() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/unit/imported-two-storey.venue.json"
+    );
+    let text = std::fs::read_to_string(path).expect("fixture exists");
+    let doc: VenueDoc = serde_json::from_str(&text).expect("importer output parses");
+    let g = compile(&doc);
+
+    assert_eq!(g.floors.len(), 2, "{:#?}", g.warnings);
+    assert_eq!(
+        g.links.len(),
+        1,
+        "the staircase did not resolve: {:#?}",
+        g.warnings
+    );
+
+    // Both ends must land on walkable floor, on *different* storeys.
+    let l = &g.links[0];
+    assert_ne!(l.ends[0].floor, l.ends[1].floor);
+    for e in &l.ends {
+        assert!(
+            g.floors[e.floor].mesh.locate(e.point).is_some(),
+            "a landing is not on walkable floor"
+        );
+    }
+
+    // Element ids are prefixed per floor, so two storeys from the same drawing
+    // do not collide. Without that the compiler sees one venue with duplicate
+    // wall ids and the openings attach to the wrong storey.
+    let ids: Vec<&str> = doc
+        .floors
+        .iter()
+        .flat_map(|f| f.walls.iter().map(|w| w.id.as_str()))
+        .collect();
+    let unique: std::collections::BTreeSet<&str> = ids.iter().copied().collect();
+    assert_eq!(ids.len(), unique.len(), "duplicate wall ids across floors");
+}

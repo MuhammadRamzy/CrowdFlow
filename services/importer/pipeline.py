@@ -24,7 +24,7 @@ from importer.errors import ScaleUnknownError, UnsupportedFileError
 from importer.layers import LayerMapping, LayerRole, LayerSummary, partition_by_role, summarise
 from importer.geometry import distance
 from importer.linework import LineWork, Segment
-from importer.schema.venue import VenueDoc
+from importer.schema.venue import Floor, Link, LinkEnd, Vec2, VenueDoc
 from importer.topology import (
     OpeningCandidate,
     door_openings,
@@ -59,6 +59,36 @@ class ImportOptions:
     page: int = 0
 
 
+@dataclass(frozen=True)
+class FloorSpec:
+    """One storey: an id, a name, and the drawing it comes from."""
+
+    floor_id: str
+    name: str
+    path: Path
+    elevation_m: float = 0.0
+
+
+@dataclass(frozen=True)
+class StairSpec:
+    """A staircase joining two floors, placed by hand.
+
+    Stairs are **not inferred**. A drawing marks a stair with a symbol that
+    varies by office and by decade, and a stair invented in the wrong place
+    gives a building an escape route it does not have — an error in the
+    optimistic direction, on the figure a venue is approved against. The user
+    says where it is.
+
+    Coordinates are metres in the imported venue's frame, which is what the
+    editor shows once a floor is loaded.
+    """
+
+    x: float
+    y: float
+    width_m: float = 1.2
+    floors: tuple[str, str] = ("f0", "f1")
+
+
 @dataclass
 class ImportResult:
     """The document, and enough of the working to review it."""
@@ -78,6 +108,136 @@ class ImportResult:
     def opening_count(self) -> int:
         floors = self.venue.floors or []
         return sum(len(f.openings or []) for f in floors)
+
+
+def import_building(
+    floors: list[FloorSpec],
+    stairs: list[StairSpec] | None = None,
+    opts: ImportOptions | None = None,
+) -> ImportResult:
+    """Import several drawings as the storeys of one building.
+
+    Each drawing is read exactly as a single-floor import reads it, then the
+    floors are stacked and joined by the stairs given. Sharing the per-floor
+    path rather than reimplementing it means a two-storey import cannot drift
+    from a one-storey import in how it repairs geometry.
+
+    A stair naming a floor that is not in the set is reported, not dropped
+    quietly: a building missing a staircase evacuates through the doors it has
+    left, and reports a time it would never achieve.
+    """
+    opts = opts or ImportOptions()
+    if not floors:
+        raise UnsupportedFileError("a building needs at least one floor")
+
+    merged: VenueDoc | None = None
+    all_warnings: list[str] = []
+    all_layers: list[LayerSummary] = []
+    combined = RepairReport()
+    scale: Scale | None = None
+
+    for spec in floors:
+        one = import_file(spec.path, opts)
+        floor = one.venue.floors[0]
+        floor.id = spec.floor_id
+        floor.name = spec.name
+        floor.elevationM = spec.elevation_m
+        # Element ids are per-floor in the source, so prefix them or two floors
+        # both call their first wall `w_0000` and the compiler sees one venue
+        # with duplicate ids.
+        _prefix_ids(floor, spec.floor_id)
+
+        all_warnings.extend(f"{spec.floor_id}: {w}" for w in one.warnings)
+        all_layers.extend(one.layers)
+        combined = _add_reports(combined, one.repair)
+        scale = scale or one.scale
+
+        if merged is None:
+            merged = one.venue
+            merged.floors = [floor]
+        else:
+            merged.floors.append(floor)
+
+    assert merged is not None and scale is not None
+    known = {f.id for f in merged.floors}
+    merged.links = []
+    for i, st in enumerate(stairs or []):
+        missing = [f for f in st.floors if f not in known]
+        if missing:
+            all_warnings.append(
+                f"stair {i} names floor(s) {', '.join(missing)}, which are not in "
+                "this building — it has been dropped, so those storeys have no "
+                "vertical route"
+            )
+            continue
+        merged.links.append(_stair_link(f"lnk_{i:03d}", st))
+
+    if len(merged.floors) > 1 and not merged.links:
+        all_warnings.append(
+            "this building has more than one floor and no stairs, so its upper "
+            "storeys have no way out"
+        )
+
+    return ImportResult(
+        venue=merged,
+        scale=scale,
+        layers=all_layers,
+        repair=combined,
+        warnings=all_warnings,
+    )
+
+
+def _prefix_ids(floor: Floor, prefix: str) -> None:
+    """Make element ids unique across floors, keeping openings attached."""
+    remap = {w.id: f"{prefix}_{w.id}" for w in floor.walls or []}
+    for w in floor.walls or []:
+        w.id = remap[w.id]
+    for o in floor.openings or []:
+        o.wall = remap.get(o.wall, o.wall)
+        o.id = f"{prefix}_{o.id}"
+    for z in floor.zones or []:
+        z.id = f"{prefix}_{z.id}"
+
+
+def _add_reports(a: RepairReport, b: RepairReport) -> RepairReport:
+    """Sum two repair reports, so a building reports what it actually did."""
+    return RepairReport(
+        input_segments=a.input_segments + b.input_segments,
+        dropped_short=a.dropped_short + b.dropped_short,
+        snapped_endpoints=a.snapped_endpoints + b.snapped_endpoints,
+        removed_duplicates=a.removed_duplicates + b.removed_duplicates,
+        merged_collinear=a.merged_collinear + b.merged_collinear,
+        closed_junctions=a.closed_junctions + b.closed_junctions,
+        paired_parallel=a.paired_parallel + b.paired_parallel,
+        bridged_openings=a.bridged_openings + b.bridged_openings,
+        output_walls=a.output_walls + b.output_walls,
+        warnings=[*a.warnings, *b.warnings],
+    )
+
+
+def _stair_link(link_id: str, st: StairSpec) -> Link:
+    """A square footprint centred on the stair, one end per floor.
+
+    The engine resolves a footprint to a landing point, so the square only has
+    to contain walkable floor — it is not the stair's true outline and is not
+    presented as one.
+    """
+    h = max(0.3, st.width_m / 2.0)
+    square = [
+        Vec2([st.x - h, st.y - h]),
+        Vec2([st.x + h, st.y - h]),
+        Vec2([st.x + h, st.y + h]),
+        Vec2([st.x - h, st.y + h]),
+    ]
+    return Link(
+        id=link_id,
+        kind="stair",
+        ends=[LinkEnd(floor=f, footprint=list(square)) for f in st.floors],
+        widthM=st.width_m,
+        clearWidthM=st.width_m,
+        # Green Guide: 66 persons/m/min on stairs against 82 on the level.
+        flowRatePpmm=66.0,
+    )
 
 
 def import_file(path: str | Path, opts: ImportOptions | None = None) -> ImportResult:
