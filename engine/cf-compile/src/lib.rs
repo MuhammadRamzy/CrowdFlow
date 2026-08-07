@@ -42,8 +42,8 @@ pub mod warning;
 
 use cf_geom::Vec2;
 use cf_navmesh::{region, triangulate_constrained, NavMesh, TriIdx, VertIdx};
-use cf_schema::ids::{FloorId, OpeningId};
-use cf_schema::venue::Floor;
+use cf_schema::ids::{FloorId, LinkId, OpeningId};
+use cf_schema::venue::{Floor, LinkKind};
 use cf_schema::VenueDoc;
 
 pub use points::PointSet;
@@ -102,7 +102,40 @@ impl FloorMesh {
 pub struct NavGraph {
     pub compiler_version: &'static str,
     pub floors: Vec<FloorMesh>,
+    /// Stairs, ramps and lifts, resolved to a landing point on each floor.
+    pub links: Vec<LinkNode>,
     pub warnings: Vec<CompileWarning>,
+}
+
+/// A vertical connection, compiled to something the simulation can walk to.
+///
+/// The authored `Link` carries a *footprint polygon* per end, which is the
+/// right thing to draw and the wrong thing to route to. This resolves each
+/// footprint to a single landing point on walkable floor, which is what a
+/// waypoint needs to be.
+#[derive(Clone, Debug)]
+pub struct LinkNode {
+    pub id: LinkId,
+    pub kind: LinkKind,
+    /// Index into `NavGraph::floors`, with the landing point on that floor.
+    pub ends: [LinkLanding; 2],
+    /// Clear width, metres — the figure egress capacity comes from, falling
+    /// back to the nominal width when no clear width is given.
+    pub clear_width_m: f64,
+    /// Walking-speed multiplier going up, and going down.
+    ///
+    /// Defaulted from the Green Guide's stair figures when the document does
+    /// not say: 66 persons/m/min on stairs against 82 on the level is a ratio
+    /// of about 0.8, and stairs are slower down than up only marginally.
+    pub speed_up: f64,
+    pub speed_down: f64,
+}
+
+/// One end of a link: which floor, and where on it people arrive.
+#[derive(Clone, Copy, Debug)]
+pub struct LinkLanding {
+    pub floor: usize,
+    pub point: Vec2,
 }
 
 impl NavGraph {
@@ -139,11 +172,100 @@ pub fn compile(doc: &VenueDoc) -> NavGraph {
         }
     }
 
+    let links = compile_links(doc, &floors, &mut warnings);
+
     NavGraph {
         compiler_version: COMPILER_VERSION,
         floors,
+        links,
         warnings,
     }
+}
+
+/// Resolve authored links to landing points the simulation can route to.
+///
+/// A link whose end lands off walkable floor, or names a floor that did not
+/// compile, is dropped with a warning rather than silently omitted. A staircase
+/// that exists in the drawing and not in the model is exactly the kind of gap
+/// that makes an egress analysis wrong in the optimistic direction — the
+/// building has a route the report does not know about, or worse, the report
+/// assumes one that is not modelled.
+fn compile_links(
+    doc: &VenueDoc,
+    floors: &[FloorMesh],
+    warnings: &mut Vec<CompileWarning>,
+) -> Vec<LinkNode> {
+    let mut out = Vec::new();
+
+    for link in &doc.links {
+        // A void is a hole in the floor, not a way between floors.
+        if link.kind == LinkKind::Opening {
+            continue;
+        }
+        if link.ends.len() != 2 {
+            warnings.push(CompileWarning::LinkNotUsable {
+                link: link.id.clone(),
+                detail: format!("{} end(s); a link needs exactly two", link.ends.len()),
+            });
+            continue;
+        }
+
+        let mut landings = Vec::with_capacity(2);
+        for end in &link.ends {
+            let Some(fi) = floors.iter().position(|f| f.floor == end.floor) else {
+                warnings.push(CompileWarning::LinkNotUsable {
+                    link: link.id.clone(),
+                    detail: format!("floor '{}' has no compiled mesh", end.floor),
+                });
+                break;
+            };
+            let mesh = &floors[fi].mesh;
+            let Some(p) = end
+                .footprint
+                .centroid()
+                .filter(|c| mesh.locate(*c).is_some())
+                .or_else(|| walkable_point_in_polygon(mesh, &end.footprint))
+            else {
+                warnings.push(CompileWarning::LinkNotUsable {
+                    link: link.id.clone(),
+                    detail: format!("its end on floor '{}' is not on walkable floor", end.floor),
+                });
+                break;
+            };
+            landings.push(LinkLanding {
+                floor: fi,
+                point: p,
+            });
+        }
+
+        if landings.len() != 2 {
+            continue;
+        }
+        // Green Guide: 66 persons/m/min on stairs against 82 on the level.
+        const STAIR_RATIO: f64 = 66.0 / 82.0;
+        out.push(LinkNode {
+            id: link.id.clone(),
+            kind: link.kind,
+            ends: [landings[0], landings[1]],
+            clear_width_m: link.clear_width_m.unwrap_or(link.width_m),
+            speed_up: link.speed_multiplier_up.unwrap_or(STAIR_RATIO),
+            speed_down: link.speed_multiplier_down.unwrap_or(STAIR_RATIO),
+        });
+    }
+
+    out
+}
+
+/// The centroid of the walkable triangle nearest the middle of `poly`.
+///
+/// A footprint centroid can fall in a hole — a stairwell drawn around its own
+/// void is the ordinary case, not a pathological one — so this falls back to
+/// somewhere a person could actually stand.
+fn walkable_point_in_polygon(mesh: &NavMesh, poly: &cf_schema::Polygon) -> Option<Vec2> {
+    (0..mesh.centroids.len())
+        .filter(|i| mesh.regions.is_walkable(*i))
+        .map(|i| mesh.centroids[i])
+        .find(|c| cf_geom::polygon_ops::contains_point(poly, *c))
 }
 
 /// Compile a single floor. Pushes diagnostics onto `warnings`.

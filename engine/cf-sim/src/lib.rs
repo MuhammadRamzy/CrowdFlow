@@ -33,6 +33,7 @@
 //! - [`sim`] — fixed-timestep step loop, routing and exits. **Done.**
 //! - Flow fields, queues, groups, evacuation mode — next.
 
+pub mod building;
 pub mod calibration;
 pub mod density;
 pub mod fmath;

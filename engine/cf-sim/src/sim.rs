@@ -354,6 +354,30 @@ impl Sim {
         moved
     }
 
+    /// Where agent `i` is trying to get to, if it has a route.
+    pub fn goal_of(&self, i: usize) -> Option<Vec2> {
+        self.routes.get(i).map(|r| r.goal)
+    }
+
+    /// Point an existing agent at a new goal.
+    ///
+    /// `to_exit` says whether that goal is a way out; only agents heading for
+    /// one are subject to congestion-aware rerouting, so a goal that is a
+    /// staircase must say so or it will be overridden by whichever door
+    /// happens to be quiet.
+    pub fn retarget(&mut self, i: usize, goal: Vec2, to_exit: bool) {
+        if i >= self.routes.len() || !self.world.active[i] {
+            return;
+        }
+        let from = Vec2::new(self.world.pos_x[i] as f64, self.world.pos_y[i] as f64);
+        let r = self.world.radius[i] as f64;
+        self.routes[i] = self.plan(from, goal, r, to_exit);
+        self.stuck_ticks[i] = 0;
+        if self.world.state[i] == AgentState::Dwelling {
+            self.world.state[i] = AgentState::Evacuating;
+        }
+    }
+
     /// The spatial index as of the last step.
     ///
     /// Exposed so a harness can ask the locomotion model what an agent senses

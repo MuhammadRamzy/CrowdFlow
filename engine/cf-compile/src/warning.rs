@@ -4,7 +4,7 @@
 //! rather than a wall (`docs/03-track-a-venue-designer.md` §A2). Every warning
 //! names the element it concerns so the canvas can pan to it.
 
-use cf_schema::ids::{FloorId, OpeningId, WallId, ZoneId};
+use cf_schema::ids::{FloorId, LinkId, OpeningId, WallId, ZoneId};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum CompileWarning {
@@ -54,6 +54,13 @@ pub enum CompileWarning {
     /// ramp it describes would be walked at full speed — silently, which is
     /// worse than not supporting it at all.
     ZoneSpeedNotApplied { zone: ZoneId, floor: FloorId },
+
+    /// A vertical link could not be resolved to a route between two floors.
+    ///
+    /// The staircase is in the drawing and not in the model. That is worth
+    /// saying loudly: an egress analysis that quietly loses a route reports a
+    /// building it is not describing.
+    LinkNotUsable { link: LinkId, detail: String },
 
     /// The floor has no opening marked as a fire exit.
     NoFireExit { floor: FloorId },
@@ -119,6 +126,10 @@ impl std::fmt::Display for CompileWarning {
             DisconnectedRegion { floor, triangles } => write!(
                 f,
                 "floor '{floor}' has {triangles} triangle(s) unreachable from the rest"
+            ),
+            LinkNotUsable { link, detail } => write!(
+                f,
+                "link '{link}' cannot be used as a route between floors: {detail}"
             ),
             ZoneSpeedNotApplied { zone, floor } => write!(
                 f,
