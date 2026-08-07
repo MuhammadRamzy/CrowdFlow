@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "lint": "eslint src --max-warnings 0",
-    "schema": "json2ts -i ../schema/venue.schema.json -o src/schema/venue.ts --no-additionalProperties --bannerComment \"/* eslint-disable */\n/**\n * GENERATED from schema/venue.schema.json \u2014 do not edit.\n * Regenerate with: pnpm schema\n * The source of truth is engine/cf-schema (ADR 0001).\n */\" && json2ts -i ../schema/scenario.schema.json -o src/schema/scenario.ts --no-additionalProperties --bannerComment \"/* eslint-disable */\n/**\n * GENERATED from schema/scenario.schema.json \u2014 do not edit.\n * Regenerate with: pnpm schema\n */\""
+    "schema": "json2ts -i ../schema/venue.schema.json -o src/schema/venue.ts --no-additionalProperties --bannerComment \"/* eslint-disable */\n/**\n * GENERATED from schema/venue.schema.json \u2014 do not edit.\n * Regenerate with: pnpm schema\n * The source of truth is engine/cf-schema (ADR 0001).\n */\" && json2ts -i ../schema/scenario.schema.json -o src/schema/scenario.ts --no-additionalProperties --bannerComment \"/* eslint-disable */\n/**\n * GENERATED from schema/scenario.schema.json \u2014 do not edit.\n * Regenerate with: pnpm schema\n */\"",
+    "test": "vitest run"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.1.0",
@@ -26,6 +27,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "json-schema-to-typescript": "^15.0.4",
     "typescript": "^5.7.0",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vitest": "^4.1.10"
   }
 }

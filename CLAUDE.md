@@ -90,6 +90,8 @@ cargo test                                   # everything
 cargo test -p cf-schema                      # one crate
 cargo run -p cf-schema --bin gen-schema      # regenerate schema/ after type changes
 cargo fmt && cargo clippy -- -D warnings     # before every commit
+cd web && pnpm test                          # web document logic (vitest)
+cd web && pnpm typecheck && pnpm build       # before every commit touching web/
 ```
 
 ## 7. Working style for this project

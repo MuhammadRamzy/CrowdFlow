@@ -824,3 +824,36 @@
 .row-note.is-alarm {
   color: var(--alarm);
 }
+
+/* --- scenario events ---------------------------------------------------
+ * A row per event, time first: the list reads as a timeline down the page,
+ * and the time is the field a planner actually adjusts.
+ */
+
+.row.event {
+  display: grid;
+  grid-template-columns: 56px auto 1fr 24px;
+  align-items: center;
+  gap: var(--gap-1);
+}
+
+.event-time {
+  width: 100%;
+  text-align: right;
+}
+
+.event-what {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  padding-left: var(--gap-1);
+}
+
+.row.event .btn-icon {
+  color: var(--faint);
+}
+
+.row.event .btn-icon:hover {
+  color: var(--alarm);
+}

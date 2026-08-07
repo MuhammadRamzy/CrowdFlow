@@ -18,6 +18,7 @@
 
 import type {
   AgentProfile,
+  TimedEvent,
   Arrival,
   Distribution,
   Goal,
@@ -401,4 +402,71 @@ export function setScenarioDuration(doc: ScenarioDoc, durationS: number): Comman
     },
     'scenario:duration',
   );
+}
+
+// ---------------------------------------------------------------------------
+// Timed events
+//
+// The engine acts on `closeOpening` and `alarm`; the rest round-trip and are
+// reported under "Not simulated". Only the two that do something are offered
+// here — a control that edits a field nothing reads is worse than no control,
+// because a reviewer will believe it.
+// ---------------------------------------------------------------------------
+
+/** Events in the order they fire. Ties keep document order, as the engine does. */
+export function sortedEvents(doc: ScenarioDoc): TimedEvent[] {
+  return [...(doc.events ?? [])].sort((a, b) => a.atS - b.atS);
+}
+
+/** Sound the alarm at `atS`: everyone heads for the nearest exit. */
+export function addAlarm(doc: ScenarioDoc, atS: number): Command<ScenarioDoc> {
+  return editScenario(doc, 'scenario.events', 'Add alarm', (d) => {
+    d.events = [...(d.events ?? []), { atS: clampTime(atS, d), kind: 'alarm' }];
+  });
+}
+
+/** Shut a doorway at `atS`. The engine seals it, not merely un-lists it. */
+export function addClosure(
+  doc: ScenarioDoc,
+  atS: number,
+  opening: string,
+): Command<ScenarioDoc> {
+  return editScenario(doc, 'scenario.events', 'Close a doorway', (d) => {
+    d.events = [
+      ...(d.events ?? []),
+      { atS: clampTime(atS, d), kind: 'closeOpening', target: opening },
+    ];
+  });
+}
+
+export function removeEvent(doc: ScenarioDoc, index: number): Command<ScenarioDoc> {
+  return editScenario(doc, 'scenario.events', 'Remove event', (d) => {
+    d.events = (d.events ?? []).filter((_, i) => i !== index);
+  });
+}
+
+export function setEventTime(
+  doc: ScenarioDoc,
+  index: number,
+  atS: number,
+): Command<ScenarioDoc> {
+  return editScenario(
+    doc,
+    'scenario.events',
+    'Move event',
+    (d) => {
+      const e = (d.events ?? [])[index];
+      if (e) e.atS = clampTime(atS, d);
+    },
+    `scenario:event:${index}:time`,
+  );
+}
+
+/**
+ * An event after the run ends never fires, and nothing on screen would say so.
+ * Clamping is the honest reading of "put it at the end".
+ */
+function clampTime(atS: number, doc: ScenarioDoc): number {
+  if (!Number.isFinite(atS)) return 0;
+  return Math.min(Math.max(0, Math.round(atS)), doc.durationS);
 }

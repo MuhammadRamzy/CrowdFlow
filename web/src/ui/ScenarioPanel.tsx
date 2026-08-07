@@ -28,7 +28,12 @@ import type { Command } from '../doc/commands';
 import {
   DEFAULT_RADIUS,
   DEFAULT_SPEED,
+  addAlarm,
+  addClosure,
   addPopulation,
+  removeEvent,
+  setEventTime,
+  sortedEvents,
   defaultCurve,
   goalOf,
   newPopulation,
@@ -145,8 +150,115 @@ export function ScenarioPanel({ scenario, venue, onEdit }: Props) {
       >
         <IconAgents /> Add population
       </button>
+
+      <EventList scenario={scenario} venue={venue} onEdit={onEdit} />
     </section>
   );
+}
+
+/**
+ * What happens partway through the run.
+ *
+ * Only the two the engine acts on are offered — sounding the alarm and shutting
+ * a doorway. `openOpening` and `blockLink` are in the schema and round-trip,
+ * but nothing reads them, and a control that edits an ignored field is worse
+ * than no control because a reviewer will believe it.
+ *
+ * Shutting a door mid-evacuation is the question a static occupant-load
+ * calculation cannot answer, so it is the one thing here worth demonstrating.
+ */
+function EventList({
+  scenario,
+  venue,
+  onEdit,
+}: {
+  scenario: ScenarioDoc;
+  venue: VenueDoc;
+  onEdit: (c: Command<ScenarioDoc>) => void;
+}) {
+  const events = sortedEvents(scenario);
+  const doors = venue.floors.flatMap((f) => f.openings ?? []);
+  // Index into the *document* order, which is what the commands address.
+  const indexOf = (e: (typeof events)[number]) => (scenario.events ?? []).indexOf(e);
+
+  return (
+    <>
+      <h2 className="panel-title">
+        Events
+        <span className="panel-count">{events.length}</span>
+      </h2>
+
+      {events.length === 0 && (
+        <p className="row-note">
+          Nothing happens partway through. Add an alarm to hold the crowd until it sounds, or
+          shut a doorway to test whether the remaining exits cope.
+        </p>
+      )}
+
+      <div className="rows">
+        {events.map((e) => {
+          const i = indexOf(e);
+          return (
+            <div className="row event" key={`${i}-${e.kind}`}>
+              <input
+                className="field-input event-time"
+                type="number"
+                min={0}
+                max={scenario.durationS}
+                aria-label="Event time, seconds"
+                value={e.atS}
+                onChange={(ev) => onEdit(setEventTime(scenario, i, Number(ev.target.value)))}
+              />
+              <span className="field-unit">s</span>
+              <span className="event-what">
+                {e.kind === 'alarm'
+                  ? 'Alarm — everyone leaves'
+                  : `Shut ${labelOfDoor(doors, 'target' in e ? e.target : '')}`}
+              </span>
+              <button
+                type="button"
+                className="btn-icon"
+                aria-label="Remove event"
+                onClick={() => onEdit(removeEvent(scenario, i))}
+              >
+                <IconDelete />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="field-pair">
+        <button
+          type="button"
+          className="btn"
+          onClick={() => onEdit(addAlarm(scenario, Math.round(scenario.durationS * 0.05)))}
+        >
+          Add alarm
+        </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={doors.length === 0}
+          onClick={() => {
+            const d = doors[0];
+            if (d) onEdit(addClosure(scenario, Math.round(scenario.durationS * 0.1), d.id));
+          }}
+        >
+          Shut a door
+        </button>
+      </div>
+    </>
+  );
+}
+
+/** A door's name for the event list, or its id if it is not on this floor. */
+function labelOfDoor(
+  doors: { id: string; kind?: string; widthM: number }[],
+  id: string,
+): string {
+  const d = doors.find((x) => x.id === id);
+  return d ? `${d.widthM.toFixed(2)} m ${d.kind ?? 'opening'}` : id;
 }
 
 interface PopProps {

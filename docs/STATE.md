@@ -152,11 +152,17 @@ have been typechecked and built but **never clicked**. Six of this project's
 frontend bugs were found only by driving the real UI, so treat that as unproven
 rather than working.
 
-The mitigation so far is `engine/cf-wasm/tests/end_to_end.rs`, which calls
-exactly what JS calls — including the scenario path the editor now uses for
-every run. If that passes, what is left to break is the JS glue, not the engine.
+Two mitigations, neither a substitute for clicking it:
+
+- `engine/cf-wasm/tests/end_to_end.rs` calls exactly what JS calls, including
+  the scenario path the editor uses for every run.
+- `pnpm test` in `web/` covers the document logic — undo interleaving across
+  both documents, scenario commands and their inverses, and the life-safety
+  arithmetic the status bar and dossier share. That is the layer where the
+  bugs actually were; rendering is still unverified.
+
 Anyone with a browser should open the app and exercise: draw a wall, edit a
-population, run, open the report.
+population, add an event, run, open the report.
 
 ### Parallel work parked on branches
 
