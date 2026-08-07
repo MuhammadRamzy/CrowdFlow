@@ -32,6 +32,7 @@ use cf_geom::Vec2;
 use cf_schema::scenario::{Arrival, EventKind, Goal, Population, ScenarioDoc};
 use cf_schema::venue::VenueDoc;
 use cf_schema::Polygon;
+use cf_sim::sim::Leg;
 use cf_sim::world::{AgentState, SpawnParams};
 use cf_sim::{Rng, Sim, Stream};
 use std::collections::HashMap;
@@ -83,6 +84,10 @@ struct Planned {
     at_s: f64,
     spot: Spot,
     goal: PlannedGoal,
+    /// Where to go after the first goal, with the wait at each.
+    rest: Vec<(PlannedGoal, f32)>,
+    /// Seconds to stand at the first goal.
+    first_dwell: f32,
     radius_m: f32,
     speed: f32,
     population: u16,
@@ -297,6 +302,8 @@ impl ScenarioRunner {
         for (pi, pop) in doc.populations.iter().enumerate() {
             let pop_idx = pi as u16;
             let goal = resolve_goal(pop, venue, mesh, &door_of, &mut notes);
+            let (rest, first_dwell) =
+                resolve_rest(pop, venue, mesh, &door_of, &rng, pi, &mut notes);
             note_unmodelled_profile(pop, &mut notes);
 
             // Where this population comes from, as a list of (spot, weight).
@@ -389,6 +396,8 @@ impl ScenarioRunner {
                     at_s,
                     spot: sources[si.min(sources.len() - 1)].0,
                     goal,
+                    rest: rest.clone(),
+                    first_dwell,
                     radius_m: radius as f32,
                     speed: speed as f32,
                     population: pop_idx,
@@ -554,13 +563,45 @@ impl ScenarioRunner {
                         entry: 0,
                         state: AgentState::Walking,
                     };
-                    match a.goal {
-                        PlannedGoal::NearestExit => {
-                            sim.spawn_to_nearest_exit(params);
+                    // A nearest-exit leg is resolved from where the agent
+                    // stands *now*. For the first leg that is exact; for a
+                    // later one it is an approximation, because by then they
+                    // will be somewhere else — and the alternative is deferring
+                    // the choice, which `reconsider_exits` already does better
+                    // once they are actually heading for a door.
+                    let resolve = |sim: &Sim, g: PlannedGoal, from: Vec2| match g {
+                        PlannedGoal::NearestExit => sim.nearest_exit(from).map(|e| (e, true)),
+                        PlannedGoal::Point(pt) => Some((pt, false)),
+                    };
+
+                    if a.rest.is_empty() {
+                        match a.goal {
+                            PlannedGoal::NearestExit => {
+                                sim.spawn_to_nearest_exit(params);
+                            }
+                            PlannedGoal::Point(g) => {
+                                sim.spawn_toward(params, g, false);
+                            }
                         }
-                        PlannedGoal::Point(g) => {
-                            sim.spawn_toward(params, g, false);
+                    } else {
+                        let mut legs: Vec<Leg> = Vec::with_capacity(a.rest.len() + 1);
+                        if let Some((goal, to_exit)) = resolve(sim, a.goal, p) {
+                            legs.push(Leg {
+                                goal,
+                                dwell_s: a.first_dwell,
+                                to_exit,
+                            });
                         }
+                        for (g, dwell) in &a.rest {
+                            if let Some((goal, to_exit)) = resolve(sim, *g, p) {
+                                legs.push(Leg {
+                                    goal,
+                                    dwell_s: *dwell,
+                                    to_exit,
+                                });
+                            }
+                        }
+                        sim.spawn_with_itinerary(params, &legs);
                     }
                     buckets
                         .entry((p.x.floor() as i64, p.y.floor() as i64))
@@ -698,6 +739,53 @@ fn invert_curve(points: &[[f64; 2]], f: f64) -> f64 {
     points[points.len() - 1][0].max(0.0)
 }
 
+/// Resolve the itinerary *after* the first step, with the wait at each stop.
+///
+/// Returns the remaining legs and the dwell belonging to the first — the wait
+/// happens where you arrive, so the first step's dwell is served at the first
+/// goal rather than being carried into the second.
+///
+/// Dwell is drawn per population rather than per agent: `Planned` is built once
+/// for a whole population and the sampling stream is keyed by population index.
+/// Per-agent variation would be better and needs the draw to move into the
+/// spawn loop, which is where the agent index exists.
+#[allow(clippy::too_many_arguments)]
+fn resolve_rest(
+    pop: &Population,
+    venue: &VenueDoc,
+    mesh: &FloorMesh,
+    door_of: &HashMap<&str, usize>,
+    rng: &Rng,
+    pop_index: usize,
+    notes: &mut Vec<String>,
+) -> (Vec<(PlannedGoal, f32)>, f32) {
+    let dwell_of = |step: &cf_schema::scenario::ItineraryStep, k: u64| -> f32 {
+        step.dwell
+            .as_ref()
+            .map(|d| d.sample_icdf(rng.uniform01(Stream::ServiceTime, pop_index as u64, k)) as f32)
+            .unwrap_or(0.0)
+            .max(0.0)
+    };
+
+    let first_dwell = pop.itinerary.first().map(|s| dwell_of(s, 0)).unwrap_or(0.0);
+
+    let mut rest = Vec::new();
+    for (i, step) in pop.itinerary.iter().enumerate().skip(1) {
+        if step.probability < 1.0 {
+            notes.push(format!(
+                "{}: step {} has probability {:.2}, which is not applied — every agent \
+                 takes every step.",
+                pop.label, i, step.probability
+            ));
+        }
+        let mut one = pop.clone();
+        one.itinerary = vec![step.clone()];
+        let goal = resolve_goal(&one, venue, mesh, door_of, notes);
+        rest.push((goal, dwell_of(step, i as u64)));
+    }
+    (rest, first_dwell)
+}
+
 /// Resolve a population's destination, reporting anything unsupported.
 fn resolve_goal(
     pop: &Population,
@@ -706,22 +794,10 @@ fn resolve_goal(
     door_of: &HashMap<&str, usize>,
     notes: &mut Vec<String>,
 ) -> PlannedGoal {
-    if pop.itinerary.len() > 1 {
-        notes.push(format!(
-            "{}: only the first itinerary step is followed — multi-leg plans need per-agent \
-             goal chaining, which the engine does not have yet.",
-            pop.label
-        ));
-    }
     let Some(step) = pop.itinerary.first() else {
         return PlannedGoal::NearestExit;
     };
-    if step.dwell.is_some() {
-        notes.push(format!(
-            "{}: dwell time is not simulated — agents hold at their goal instead of moving on.",
-            pop.label
-        ));
-    }
+
     if step.probability < 1.0 {
         notes.push(format!(
             "{}: step probability {:.2} is not applied — every agent takes this step.",
@@ -1134,9 +1210,22 @@ mod tests {
         let scn = scenario(pop, 60.0);
         let runner = ScenarioRunner::plan(&scn, &doc, &graph.floors[0]);
         let joined = runner.notes().join(" | ");
-        assert!(joined.contains("first itinerary step"), "{joined}");
-        assert!(joined.contains("dwell"), "{joined}");
+
+        // Still unsupported, and still said out loud.
         assert!(joined.contains("patience"), "{joined}");
+
+        // No longer unsupported. A note that outlives the limitation it
+        // describes is worse than no note: it tells a reviewer the tool ignored
+        // something it in fact acted on, and they will plan around a
+        // restriction that is not there.
+        assert!(
+            !joined.contains("first itinerary step"),
+            "multi-leg itineraries are followed now: {joined}"
+        );
+        assert!(
+            !joined.contains("dwell time is not simulated"),
+            "dwell is simulated now: {joined}"
+        );
     }
 
     #[test]

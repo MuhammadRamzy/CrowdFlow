@@ -153,7 +153,7 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [ ] Access-tag matrix
 - [x] Arrival curve editor with derivative plot
 - [x] Population builder (distribution editors generated from schema)
-- [~] Itinerary builder — first step only (goal + entry); multi-leg needs per-agent goal chaining in `cf-sim`
+- [~] Itinerary builder — the engine follows multi-leg plans with dwells; the panel still authors one step
 - [~] Event timeline — engine acts on `closeOpening` and `alarm`; no UI to author them yet
 - [ ] Scenario manager (duplicate, tag, compare)
 
