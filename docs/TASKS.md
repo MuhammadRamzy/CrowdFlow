@@ -159,9 +159,9 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 
 ### A4 — Deterministic import (W9–W14)
 - [~] DXF ingest (`ezdxf`) — lines, polylines, arcs, circles; blocks/xrefs/inserts not expanded
-- [ ] Vector PDF ingest (`pypdfium2`)
+- [x] Vector PDF ingest (`pdfminer.six` — pypdfium2 not needed; PyMuPDF is AGPL and banned)
 - [ ] SVG ingest
-- [~] Layer mapping — heuristic seeding and explicit mapping done; no UI, no per-org persistence
+- [~] Layer mapping — heuristic seeding, explicit mapping and a CLI listing; no UI, no per-org persistence
 - [x] Topology repair: dedupe, dominant direction, endpoint clustering, collinear merge
 - [~] Topology repair: junction closing — greedy nearest-intersection, not min-cost assignment
 - [ ] Topology repair: sliver removal, planar arrangement, face → rooms

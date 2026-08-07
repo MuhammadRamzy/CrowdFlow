@@ -13,7 +13,7 @@ end, the model meets its headline benchmark (82.1 p/m/min through a 1 m door
 against the Green Guide's 82), and the whole RiMEA suite runs. One calibration
 gap remains; see "Next up".
 **Last updated:** 2026-08-06 by Ramzy's session
-**Tree status:** green — 269 Rust, 49 web and 21 Python tests passing, 4 ignored
+**Tree status:** green — 269 Rust, 49 web and 30 Python tests passing, 4 ignored
 (two are measurement tools rather than assertions: the repulsion sweep and the
 scale benchmark), and one of those two is a
 diagnostic tool rather than a test. clippy clean, wasm32 builds, web typecheck
@@ -60,7 +60,7 @@ The frontend is real and drives the real engine — nothing on screen is mocked.
 
 ### Next up — pick from the top
 
-The engine is in good shape. **269 Rust, 49 web, 21 Python tests; 4 ignored** — and one of those
+The engine is in good shape. **269 Rust, 49 web, 30 Python tests; 4 ignored** — and one of those
 two is a diagnostic tool rather than a test. Every RiMEA case the engine
 is capable of satisfying, satisfies.
 
@@ -157,25 +157,33 @@ Ranked, what is left:
    dominated by per-agent force and contact work. R2 makes both harder than
    they look — bit-identical scalar fallback, deterministic partitioning.
 
-4. **PDF vector import** (`pypdf` or `pdfminer.six` — **not** PyMuPDF, AGPL).
+4. **Flow fields — deprioritised.** ~3% of a step (ADR 0008).
 
-5. **Flow fields — deprioritised.** ~3% of a step (ADR 0008).
-
-6. Multi-select and marquee; per-agent goal chaining for multi-leg itineraries;
-   move `egressDistribution` off the main thread; AI raster import (A5).
+5. Multi-select and marquee; per-agent goal chaining for multi-leg itineraries;
+   move `egressDistribution` off the main thread; AI raster import (A5);
+   multi-floor *import* (the engine has floors, the importer emits one).
 
 ### What the importer does and does not do
 
 `services/` imports DXF end to end — read, calibrate, map layers, repair, emit —
 and `engine/cf-compile/tests/imported.rs` compiles its real output in Rust.
 
-Two traps are recorded in `services/README.md` and worth repeating:
+DXF and vector PDF both work, driven from a CLI:
+
+    python3 -m importer plan.dxf --list-layers
+    python3 -m importer plan.dxf --scale mm --layer A-WALL=wall -o venue.json
+    python3 -m importer plan.pdf --calibrate 100 100 666.93 100 20 --layer pdf=wall
+
+Three traps are recorded in `services/README.md` and worth repeating:
 
 - **Everything after calibration is in metres.** Repair's tolerances are metric
   and *are* its judgement; running it against raw drawing units imported a hall
   with no doors and said nothing was wrong.
 - **Scale is never guessed.** `$INSUNITS` is frequently whatever the template
   had, so `trust_file_units` is off by default.
+- **A PDF's units are page points, not drawing scale.** At 1:100 a metre of
+  wall is 0.72 pt, so trusting the file gives a building 100x too small.
+  Two-point calibration is the normal route for PDF, not a fallback.
 
 ### A standing caveat: none of the UI has been driven
 
