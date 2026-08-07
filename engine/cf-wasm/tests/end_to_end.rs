@@ -8,7 +8,7 @@
 //! This is the M1 demo expressed as an assertion: load the fixture, put agents
 //! in the hall, step, and watch them leave through the doors.
 
-use cf_wasm::{CompiledVenue, Simulation};
+use cf_wasm::{BuildingSim, CompiledVenue, Simulation};
 use std::path::PathBuf;
 
 fn fixture() -> String {
@@ -596,4 +596,55 @@ fn an_unfinished_run_has_no_egress_time() {
         d.iter().all(|t| t.is_nan()),
         "a truncated run reported a time: {d:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Multi-floor, through the binding
+// ---------------------------------------------------------------------------
+
+/// The single-floor fixture, driven as a building.
+///
+/// One floor and no stairs is the shape of every venue in this repo, so it is
+/// the case that must not regress: wrapping it in a `BuildingSim` has to behave
+/// exactly like the plain path.
+#[test]
+fn a_one_floor_venue_runs_as_a_building() {
+    let v = CompiledVenue::from_json(&fixture()).expect("compiles");
+    let mut b = BuildingSim::new(&v, 20260807).expect("builds");
+
+    assert_eq!(b.floor_count(), 1);
+    assert!(
+        b.crossings().is_empty(),
+        "a venue with no stairs has no crossings"
+    );
+
+    let placed = b.spawn_on_floor(0, 200);
+    assert!(placed > 150, "only {placed} of 200 were placed");
+    assert_eq!(b.positions_on_floor(0).len(), placed as usize * 2);
+    assert_eq!(b.states_on_floor(0).len(), placed as usize);
+
+    for _ in 0..6000 {
+        b.step();
+        if b.in_transit() == 0 && b.positions_on_floor(0).is_empty() {
+            break;
+        }
+    }
+    assert!(b.positions_on_floor(0).is_empty(), "the hall never emptied");
+    assert_eq!(b.in_transit(), 0);
+    assert!(b.time() > 0.0);
+}
+
+/// A floor index nobody has is answered, not panicked on.
+///
+/// The editor asks for the floor it is drawing, and it can ask before the
+/// venue it is drawing has been compiled.
+#[test]
+fn asking_about_a_floor_that_is_not_there_is_safe() {
+    let v = CompiledVenue::from_json(&fixture()).expect("compiles");
+    let mut b = BuildingSim::new(&v, 1).expect("builds");
+
+    assert_eq!(b.spawn_on_floor(7, 50), 0);
+    assert!(b.positions_on_floor(7).is_empty());
+    assert!(b.states_on_floor(7).is_empty());
+    assert_eq!(b.route_to_stairs(7), 0);
 }

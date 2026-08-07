@@ -23,6 +23,7 @@ mod scenario;
 use cf_compile::{compile, CompileWarning, NavGraph};
 use cf_geom::Vec2;
 use cf_schema::{ScenarioDoc, VenueDoc};
+use cf_sim::building::{Building, Link as BuildingLink};
 use cf_sim::world::{AgentState, SpawnParams};
 use cf_sim::{ExitSpan, Sim, SimParams};
 use scenario::ScenarioRunner;
@@ -456,7 +457,19 @@ impl Simulation {
     /// the same crowd.
     #[wasm_bindgen(js_name = spawnScattered)]
     pub fn spawn_scattered(&mut self, count: u32) -> u32 {
-        let Some(mesh) = self.sim.mesh() else {
+        spawn_scattered_into(&mut self.sim, count)
+    }
+}
+
+/// Scatter `count` agents over a `Sim`'s walkable floor.
+///
+/// A free function rather than a method because `BuildingSim` needs it per
+/// floor, and duplicating placement — with its area weighting and its
+/// no-overlap rule — is exactly how two code paths come to disagree about what
+/// a crowd looks like.
+fn spawn_scattered_into(sim: &mut Sim, count: u32) -> u32 {
+    let placed_count = {
+        let Some(mesh) = sim.mesh() else {
             return 0;
         };
 
@@ -488,7 +501,7 @@ impl Simulation {
             return 0;
         }
 
-        let seed = self.sim.rng.seed();
+        let seed = sim.rng.seed();
         let rng = cf_sim::Rng::new(seed);
 
         // Weidmann (1993): mean free walking speed 1.34 m/s, sd 0.26.
@@ -578,29 +591,31 @@ impl Simulation {
 
             let Some(plan) = chosen else { continue };
             planned.push(plan);
-            let _ = plan;
-            continue;
         }
+        planned
+    };
 
-        let mut spawned = 0;
-        for (pos, speed, radius) in planned {
-            self.sim.spawn_to_nearest_exit(SpawnParams {
-                position: pos,
-                radius_m: radius as f32,
-                desired_speed: speed as f32,
-                goal: 0,
-                population: 0,
-                entry: 0,
-                state: AgentState::Walking,
-            });
-            spawned += 1;
-        }
-        // Populate the density field now so a placed crowd is visible before
-        // playback starts.
-        self.sim.refresh_density();
-        spawned
+    let mut spawned = 0;
+    for (pos, speed, radius) in placed_count {
+        sim.spawn_to_nearest_exit(SpawnParams {
+            position: pos,
+            radius_m: radius as f32,
+            desired_speed: speed as f32,
+            goal: 0,
+            population: 0,
+            entry: 0,
+            state: AgentState::Walking,
+        });
+        spawned += 1;
     }
+    // Populate the density field now so a placed crowd is visible before
+    // playback starts.
+    sim.refresh_density();
+    spawned
+}
 
+#[wasm_bindgen]
+impl Simulation {
     /// The density field as bytes, one per cell, row-major.
     ///
     /// Quantised to `0..=255` over `0..maxDensity` persons/m², because this is
@@ -765,4 +780,187 @@ struct StatsView {
     blocked: u32,
     max_overlap: f32,
     escaped: u32,
+}
+
+// ---------------------------------------------------------------------------
+// Multi-floor
+// ---------------------------------------------------------------------------
+
+/// A whole building: one simulation per floor, joined by its stairs.
+///
+/// Separate from [`Simulation`] rather than folded into it. A single-floor venue
+/// is every fixture in this repo and most venues anywhere, and it should not pay
+/// for floors it does not have — neither in the step, where agents on different
+/// floors must not appear in each other's neighbour queries, nor in the API,
+/// where every call would grow a floor argument that is always zero.
+///
+/// The editor draws one floor at a time, so positions come back per floor.
+#[wasm_bindgen]
+pub struct BuildingSim {
+    inner: Building,
+    xy: Vec<f32>,
+    states: Vec<u8>,
+}
+
+#[wasm_bindgen]
+impl BuildingSim {
+    /// Build from a compiled venue, one `Sim` per floor plus its links.
+    ///
+    /// Each floor's own doorways are its exits. A floor with none — an upper
+    /// storey, typically — has no way out except the stairs, which is both
+    /// correct and the reason `routeToStairs` exists.
+    #[wasm_bindgen(constructor)]
+    pub fn new(venue: &CompiledVenue, seed: u64) -> Result<BuildingSim, JsError> {
+        if venue.graph.floors.is_empty() {
+            return Err(JsError::new("venue has no compiled floors"));
+        }
+
+        let sims: Vec<Sim> = venue
+            .graph
+            .floors
+            .iter()
+            .map(|f| {
+                let exits = f
+                    .doors
+                    .iter()
+                    .map(|d| ExitSpan { a: d.a, b: d.b })
+                    .collect();
+                Sim::new(f.mesh.clone(), exits, SimParams::default(), seed)
+            })
+            .collect();
+
+        let links = venue
+            .graph
+            .links
+            .iter()
+            .map(|l| BuildingLink {
+                floor_a: l.ends[0].floor,
+                point_a: l.ends[0].point,
+                floor_b: l.ends[1].floor,
+                point_b: l.ends[1].point,
+                clear_width_m: l.clear_width_m,
+                // Time on the stair, from its own speed multiplier and a
+                // nominal flight length. Descending is what an evacuation
+                // does, so `speed_down` is the one that counts.
+                traverse_s: stair_seconds(l.speed_down),
+            })
+            .collect();
+
+        Ok(BuildingSim {
+            inner: Building::new(sims, links),
+            xy: Vec::new(),
+            states: Vec::new(),
+        })
+    }
+
+    #[wasm_bindgen(js_name = floorCount)]
+    pub fn floor_count(&self) -> usize {
+        self.inner.floor_count()
+    }
+
+    /// Scatter `count` agents across a floor, each routed to its nearest exit.
+    #[wasm_bindgen(js_name = spawnOnFloor)]
+    pub fn spawn_on_floor(&mut self, floor: usize, count: u32) -> u32 {
+        match self.inner.floor_mut(floor) {
+            Some(sim) => spawn_scattered_into(sim, count),
+            None => 0,
+        }
+    }
+
+    /// Send everyone on a floor to its nearest staircase.
+    ///
+    /// What "evacuate" means on a storey with no doors of its own.
+    #[wasm_bindgen(js_name = routeToStairs)]
+    pub fn route_to_stairs(&mut self, floor: usize) -> u32 {
+        self.inner.route_to_stairs(floor)
+    }
+
+    pub fn step(&mut self) {
+        self.inner.step();
+    }
+
+    #[wasm_bindgen(js_name = stepMany)]
+    pub fn step_many(&mut self, n: u32) {
+        for _ in 0..n {
+            self.inner.step();
+        }
+    }
+
+    /// Interleaved `[x, y, ...]` for the agents on one floor, in metres.
+    #[wasm_bindgen(js_name = positionsOnFloor)]
+    pub fn positions_on_floor(&mut self, floor: usize) -> Vec<f32> {
+        self.xy.clear();
+        if let Some(sim) = self.inner.floor(floor) {
+            let w = &sim.world;
+            for i in 0..w.len() {
+                if w.active[i] {
+                    self.xy.push(w.pos_x[i]);
+                    self.xy.push(w.pos_y[i]);
+                }
+            }
+        }
+        self.xy.clone()
+    }
+
+    /// One `AgentState` per active agent on that floor, matching `positionsOnFloor`.
+    #[wasm_bindgen(js_name = statesOnFloor)]
+    pub fn states_on_floor(&mut self, floor: usize) -> Vec<u8> {
+        self.states.clear();
+        if let Some(sim) = self.inner.floor(floor) {
+            let w = &sim.world;
+            for i in 0..w.len() {
+                if w.active[i] {
+                    self.states.push(w.state[i] as u8);
+                }
+            }
+        }
+        self.states.clone()
+    }
+
+    /// People on a staircase: off one floor and not yet on the next.
+    ///
+    /// A run is over when the building is empty **and** this is zero. Without
+    /// it a building reports itself evacuated while a stair is still full.
+    #[wasm_bindgen(js_name = inTransit)]
+    pub fn in_transit(&self) -> usize {
+        self.inner.in_transit()
+    }
+
+    /// How many have used each staircase, in the order `links` were compiled.
+    pub fn crossings(&self) -> Vec<u32> {
+        self.inner.crossings().to_vec()
+    }
+
+    pub fn time(&self) -> f64 {
+        self.inner.time()
+    }
+
+    /// Counters across every floor, including people on the stairs.
+    pub fn stats(&self) -> Result<JsValue, JsError> {
+        let s = self.inner.stats();
+        let view = StatsView {
+            tick: s.tick as f64,
+            time: s.time,
+            active: s.active,
+            exited: s.exited,
+            spawned: s.spawned,
+            blocked: s.blocked,
+            max_overlap: s.max_overlap,
+            escaped: s.escaped,
+        };
+        serde_wasm_bindgen::to_value(&view).map_err(|e| JsError::new(&e.to_string()))
+    }
+}
+
+/// Seconds to walk a flight, from its speed multiplier.
+///
+/// A storey is about 3.5 m of rise, and a stair at the Green Guide's 66
+/// persons/m/min is walked at roughly 0.8 of level pace. That gives a flight of
+/// about 12 s, which is the figure hydraulic calculations use. Derived rather
+/// than hardcoded so a document that states its own multiplier changes it.
+fn stair_seconds(speed_multiplier: f64) -> f64 {
+    const FLIGHT_LENGTH_M: f64 = 12.0;
+    const LEVEL_SPEED: f64 = 1.34;
+    let v = (LEVEL_SPEED * speed_multiplier.clamp(0.05, 2.0)).max(0.05);
+    FLIGHT_LENGTH_M / v
 }
