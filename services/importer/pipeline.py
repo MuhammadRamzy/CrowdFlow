@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from importer import calibration, dxf
+from importer import calibration, dxf, pdf_vector
 from importer.calibration import Scale
 from importer.errors import ScaleUnknownError, UnsupportedFileError
 from importer.layers import LayerMapping, LayerRole, LayerSummary, partition_by_role, summarise
@@ -54,6 +54,9 @@ class ImportOptions:
     trust_file_units: bool = False
     venue_id: str = "vnu_import"
     name: str = "Imported venue"
+    #: Which page of a PDF to read. A drawing set has one plan per page, and
+    #: importing all of them superimposed produces a building nobody drew.
+    page: int = 0
 
 
 @dataclass
@@ -86,11 +89,13 @@ def import_file(path: str | Path, opts: ImportOptions | None = None) -> ImportRe
     suffix = p.suffix.lower()
     if suffix == ".dxf":
         work = dxf.read(p)
+    elif suffix == ".pdf":
+        work = pdf_vector.read(p, page=opts.page)
     else:
         raise UnsupportedFileError(
-            f"{p.name}: only DXF is supported today. The PDF vector path is "
-            "planned (docs/03-track-a-venue-designer.md A4) and raster import "
-            "after it."
+            f"{p.name}: DXF and vector PDF are supported. A scanned or "
+            "photographed plan is a raster import (track A5), which is not "
+            "built."
         )
 
     warnings = list(work.warnings)

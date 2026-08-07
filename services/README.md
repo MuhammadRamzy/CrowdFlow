@@ -42,9 +42,16 @@ python3 tests/make_fixture.py   # regenerate the DXF fixtures
 
 ## What works today
 
-**DXF only.** `LINE`, `LWPOLYLINE`, `POLYLINE`, `ARC` and `CIRCLE` are read;
-anything else is *counted and reported*, so a drawing whose walls are all
-splines says so rather than importing as an empty venue.
+**DXF** — `LINE`, `LWPOLYLINE`, `POLYLINE`, `ARC` and `CIRCLE`. Anything else
+is *counted and reported*, so a drawing whose walls are all splines says so
+rather than importing as an empty venue.
+
+**Vector PDF** — stroked and filled paths, Béziers subdivided. A PDF carries no
+layers, so everything arrives on one bucket named `pdf` which you map wholesale.
+It also carries no *drawing* scale: its units are points on the page, and a plan
+at 1:100 puts 1 m of wall in 0.72 pt. `--trust-file-units` on a PDF therefore
+produces a building two orders of magnitude too small — the importer warns, but
+two-point calibration is the normal route here rather than a fallback.
 
 ```python
 from importer import ImportOptions, import_file
@@ -104,15 +111,15 @@ Every dependency in the product path must be permissive —
 | Package | Licence | Why |
 |---|---|---|
 | `ezdxf` | MIT | DXF reading |
+| `pdfminer.six` | MIT | Vector PDF reading |
 | `pydantic` | MIT | Generated document models |
 | `pytest`, `mypy`, `ruff` | MIT | Dev only |
 
-**PyMuPDF is AGPL and must not be used.** When the PDF vector path lands it uses
-`pypdf` (BSD) or `pdfminer.six` (MIT).
+**PyMuPDF is AGPL and must not be used**, despite being the obvious tool for
+this job. `pdfminer.six` is MIT and is what the PDF path uses.
 
 ## Not built yet
 
-- **PDF vector import.** `import_file` raises `UnsupportedFileError` naming it.
 - **AI raster import** (track A5) — photographed and scanned plans.
 - **Multi-floor.** Every import produces one floor, `f0`. The engine supports
   more (`cf_sim::building`); the importer does not populate it.

@@ -30,7 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
             "wrong size, and nothing about the result looks wrong."
         ),
     )
-    p.add_argument("drawing", type=Path, help="a .dxf file")
+    p.add_argument("drawing", type=Path, help="a .dxf or vector .pdf file")
     p.add_argument(
         "-o",
         "--out",
@@ -67,6 +67,13 @@ def build_parser() -> argparse.ArgumentParser:
         "heuristics; --list-layers shows what those would decide.",
     )
     p.add_argument(
+        "--page",
+        type=int,
+        default=0,
+        help="which page of a PDF (default 0). A drawing set has one plan per "
+        "page, and importing them superimposed makes a building nobody drew.",
+    )
+    p.add_argument(
         "--list-layers",
         action="store_true",
         help="report the layers in the file and stop, without importing",
@@ -101,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
         trust_file_units=args.trust_file_units,
         name=args.name or args.drawing.stem,
         venue_id=f"vnu_{args.drawing.stem}",
+        page=args.page,
     )
 
     # Listing layers must work *before* a scale is known — deciding which layer
@@ -135,11 +143,15 @@ def main(argv: list[str] | None = None) -> int:
 
 def _list_layers(drawing: Path) -> int:
     """Report what is in the file, so a user can decide the mapping."""
-    from importer import dxf
+    from importer import dxf, pdf_vector
     from importer.layers import summarise
 
     try:
-        work = dxf.read(drawing)
+        work = (
+            pdf_vector.read(drawing)
+            if drawing.suffix.lower() == ".pdf"
+            else dxf.read(drawing)
+        )
     except ImporterError as exc:
         print(f"{drawing.name}: {exc}", file=sys.stderr)
         return 1

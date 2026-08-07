@@ -112,11 +112,14 @@ def test_a_drawing_with_no_line_work_says_so() -> None:
         import_file(FIXTURES / "text-only.dxf", mm_options())
 
 
-def test_a_pdf_is_refused_with_a_reason() -> None:
+def test_an_unsupported_format_is_refused_with_the_right_advice() -> None:
+    # DXF and vector PDF are in. A scanned plan is a different problem — raster
+    # import, track A5 — and saying so is the difference between a user waiting
+    # for a feature and a user hunting for a bug in their file.
     from importer import UnsupportedFileError
 
-    with pytest.raises(UnsupportedFileError, match="only DXF"):
-        import_file(FIXTURES / "nope.pdf", mm_options())
+    with pytest.raises(UnsupportedFileError, match="raster import"):
+        import_file(FIXTURES / "plan.png", mm_options())
 
 
 def test_the_same_file_imports_identically_twice() -> None:

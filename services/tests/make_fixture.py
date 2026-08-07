@@ -102,12 +102,38 @@ def text_only(path: Path) -> None:
     doc.saveas(path)
 
 
+def hall_pdf(path: Path) -> None:
+    """The same hall as a vector PDF, drawn at 1:100.
+
+    20 m of wall at 1:100 is 200 mm on the page, which is 566.9 points. Nothing
+    in the file says so — that is the whole difficulty of the PDF path, and why
+    calibration matters more here than for DXF.
+    """
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.units import mm
+
+    c = canvas.Canvas(str(path))
+    scale = 10.0 * mm / 1000.0  # 1:100, drawing mm to page points
+
+    def wall(x1, y1, x2, y2):
+        c.line(100 + x1 * scale, 100 + y1 * scale, 100 + x2 * scale, 100 + y2 * scale)
+
+    wall(0, 0, 9000, 0)
+    wall(10000, 0, 20000, 0)
+    wall(20000, 0, 20000, 12000)
+    wall(20000, 12000, 0, 12000)
+    wall(0, 12000, 0, 0)
+    c.showPage()
+    c.save()
+
+
 def write_all(into: Path) -> None:
     into.mkdir(parents=True, exist_ok=True)
     hall_with_two_doors(into / "hall-mm.dxf")
     hall_with_a_door_layer(into / "hall-doorlayer.dxf")
     unitless(into / "unitless.dxf")
     text_only(into / "text-only.dxf")
+    hall_pdf(into / "hall.pdf")
 
 
 if __name__ == "__main__":
