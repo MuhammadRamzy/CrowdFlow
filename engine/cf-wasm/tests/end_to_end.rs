@@ -288,3 +288,139 @@ fn a_placed_crowd_does_not_start_overlapping() {
         "a freshly placed crowd reports {peak:.2} p/m², which cannot be true"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The scenario path
+//
+// `Simulation::fromScenario` is what the editor calls for every run — the
+// `spawnScattered` path above is now only the no-scenario fallback. The planner
+// itself is unit-tested in `cf_wasm::scenario`; what these cover is the
+// binding: a JSON document in, a running simulation out, and the counters the
+// panel reads back.
+// ---------------------------------------------------------------------------
+
+/// A scenario over the fixture: everyone already inside, all leaving.
+///
+/// Written as JSON rather than built from the Rust types on purpose. The editor
+/// sends a string, so a field renamed on the wire without its
+/// `#[serde(rename_all)]` — which this repo has been bitten by — should fail
+/// here rather than in a browser.
+fn scenario_json(count: u32, extra: &str) -> String {
+    format!(
+        r#"{{
+          "schemaVersion": "cfs.scenario/1.0",
+          "id": "scn_e2e",
+          "name": "End to end",
+          "venueVersion": "v1",
+          "mode": "evacuation",
+          "durationS": 600,
+          "timestepS": 0.05,
+          "seed": 20260801,
+          "populations": [{{
+            "id": "pop_a",
+            "label": "General admission",
+            "count": {count},
+            "profile": {{
+              "desiredSpeed": {{"dist":"normal","mean":1.34,"sd":0.26,"min":0.6,"max":2.2}},
+              "radiusM": {{"dist":"normal","mean":0.23,"sd":0.02,"min":0.18,"max":0.3}}
+            }},
+            "arrival": {{"kind":"preplaced","zones":[]}},
+            "itinerary": [{{"goal":{{"target":"nearestExit"}},"probability":1}}],
+            "access": []
+          }}],
+          "events": [],
+          "output": {{}}
+          {extra}
+        }}"#
+    )
+}
+
+#[test]
+fn a_scenario_document_drives_a_run_through_the_binding() {
+    let v = CompiledVenue::from_json(&fixture()).expect("compiles");
+    let mut sim = Simulation::from_scenario(&v, 0, &scenario_json(200, "")).expect("plans");
+
+    assert_eq!(sim.scenario_total(), 200, "the authored count is what runs");
+
+    // Preplaced, so everyone is admitted in the first few ticks rather than
+    // being held back — an empty venue at t=0 would mean the run never starts.
+    sim.step_many(20);
+    assert!(
+        sim.active_count() > 0,
+        "nobody was admitted: pending {}, unplaced {}",
+        sim.pending_count(),
+        sim.unplaced_count()
+    );
+
+    for _ in 0..8000 {
+        sim.step();
+        if sim.active_count() == 0 && sim.pending_count() == 0 {
+            break;
+        }
+    }
+
+    assert_eq!(sim.active_count(), 0, "the hall never emptied");
+    assert_eq!(
+        sim.exited_count() + sim.unplaced_count(),
+        200,
+        "agents went missing: {} out, {} unplaced",
+        sim.exited_count(),
+        sim.unplaced_count()
+    );
+}
+
+/// A malformed scenario must be an error, never a panic.
+///
+/// Asserted against the parse rather than through the binding, for the same
+/// reason as `a_malformed_document_is_rejected_not_panicked_on`: constructing a
+/// `JsError` off-wasm panics inside wasm-bindgen, so calling the binding on
+/// input it rejects would fail here for a reason that has nothing to do with
+/// the engine. The binding does nothing but wrap this result.
+#[test]
+fn a_malformed_scenario_is_rejected_not_panicked_on() {
+    assert!(serde_json::from_str::<cf_schema::scenario::ScenarioDoc>("{ not json").is_err());
+    assert!(
+        serde_json::from_str::<cf_schema::scenario::ScenarioDoc>(
+            r#"{"schemaVersion":"cfs.scenario/1.0"}"#
+        )
+        .is_err(),
+        "a document missing its populations should be rejected"
+    );
+}
+
+#[test]
+fn a_scenario_run_is_reproducible_from_its_seed() {
+    let v = CompiledVenue::from_json(&fixture()).expect("compiles");
+    let trace = |json: &str| {
+        let mut s = Simulation::from_scenario(&v, 0, json).expect("plans");
+        s.step_many(200);
+        (s.positions().to_vec(), s.exited_count())
+    };
+
+    let a = trace(&scenario_json(150, ""));
+    let b = trace(&scenario_json(150, ""));
+    assert_eq!(a.1, b.1);
+    assert_eq!(a.0, b.0, "the same scenario and seed diverged");
+}
+
+/// Note on what is *not* covered here.
+///
+/// `Simulation::scenario_notes` returns a `JsValue`, which cannot be built or
+/// inspected off-wasm, so the "Not simulated" list the authoring panel prints
+/// is asserted in `cf_wasm::scenario` instead — see
+/// `unsupported_authoring_is_reported_rather_than_ignored`. The binding here
+/// does nothing but serialise that slice.
+#[test]
+fn an_unacted_on_event_still_plans_rather_than_failing() {
+    let v = CompiledVenue::from_json(&fixture()).expect("compiles");
+    // `events` is in the schema and the engine does not act on it. Planning
+    // must still succeed — refusing the document outright would make an
+    // unsupported field fatal rather than reported.
+    let with_event = scenario_json(50, "").replace(
+        r#""events": [],"#,
+        r#""events": [{"atS":30.0,"kind":"closeOpening","target":"op_south"}],"#,
+    );
+    let mut sim = Simulation::from_scenario(&v, 0, &with_event).expect("plans despite the event");
+    sim.step_many(50);
+    assert!(sim.active_count() > 0);
+}
