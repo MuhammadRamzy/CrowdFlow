@@ -13,7 +13,7 @@ end, the model meets its headline benchmark (82.1 p/m/min through a 1 m door
 against the Green Guide's 82), and the whole RiMEA suite runs. One calibration
 gap remains; see "Next up".
 **Last updated:** 2026-08-06 by Ramzy's session
-**Tree status:** green — 255 Rust tests and 28 web tests passing, 2 ignored, and one of those two is a
+**Tree status:** green — 255 Rust tests and 49 web tests passing, 2 ignored, and one of those two is a
 diagnostic tool rather than a test. clippy clean, wasm32 builds, web typecheck
 and production build clean.
 
@@ -58,7 +58,7 @@ The frontend is real and drives the real engine — nothing on screen is mocked.
 
 ### Next up — pick from the top
 
-The engine is in good shape. **255 Rust tests, 28 web tests, 2 ignored** — and one of those
+The engine is in good shape. **255 Rust tests, 49 web tests, 2 ignored** — and one of those
 two is a diagnostic tool rather than a test. Every RiMEA case the engine
 is capable of satisfying, satisfies.
 
@@ -146,17 +146,25 @@ have been typechecked and built but **never clicked**. Six of this project's
 frontend bugs were found only by driving the real UI, so treat that as unproven
 rather than working.
 
-Two mitigations, neither a substitute for clicking it:
+**What is now covered without a browser:**
 
 - `engine/cf-wasm/tests/end_to_end.rs` calls exactly what JS calls, including
   the scenario path the editor uses for every run.
-- `pnpm test` in `web/` covers the document logic — undo interleaving across
-  both documents, scenario commands and their inverses, and the life-safety
-  arithmetic the status bar and dossier share. That is the layer where the
-  bugs actually were; rendering is still unverified.
+- `pnpm test` in `web/` runs under jsdom and covers the document logic *and*
+  renders the scenario panel and the compliance dossier — that they mount,
+  show the right figures, and carry the caveats they are obliged to carry.
 
-Anyone with a browser should open the app and exercise: draw a wall, edit a
-population, add an event, run, open the report.
+**What is still unverified, and needs a person:**
+
+- **The canvas.** PixiJS needs WebGL, so `Renderer`, tools, selection, panning
+  and the heatmap are excluded from the jsdom run entirely.
+- **How any of it looks.** Rendering without throwing is not the same as
+  reading correctly.
+- **The wiring in `App.tsx`** — panels are tested in isolation, not as mounted
+  by the app.
+
+Anyone with a browser should open the app and exercise: draw a wall, select
+it, undo, edit a population, add an event, run, open the report.
 
 ### Parallel work parked on branches
 
