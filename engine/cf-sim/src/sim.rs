@@ -94,6 +94,19 @@ struct Route {
     next: usize,
     /// Where this route was planned to, so it can be planned again.
     goal: Vec2,
+    /// Where to go after this goal, and how long to wait at each.
+    ///
+    /// Popped from the front as each leg completes. An itinerary is "arrive,
+    /// find your seat, leave" — a single goal can only express the last of
+    /// those, and a venue where nobody is doing anything before the alarm is
+    /// not the venue anyone is analysing.
+    chain: Vec<Leg>,
+    /// Seconds to stand at the goal currently being walked to.
+    ///
+    /// Belongs to the leg being *walked*, not the one queued next: you wait
+    /// where you arrived. Zeroed once served so arriving twice — which a crowd
+    /// jostling around a goal does constantly — does not restart the wait.
+    dwell_on_arrival: f32,
     /// Whether that goal is a way out.
     ///
     /// Congestion-aware rerouting may only touch agents that are trying to
@@ -109,6 +122,16 @@ impl Route {
     fn target(&self) -> Option<Vec2> {
         self.points.get(self.next).copied()
     }
+}
+
+/// One stop on an itinerary.
+#[derive(Clone, Copy, Debug)]
+pub struct Leg {
+    pub goal: Vec2,
+    /// Seconds to stand there before moving on.
+    pub dwell_s: f32,
+    /// Whether this leg's goal is a way out of the venue.
+    pub to_exit: bool,
 }
 
 /// Aggregate counters for one run.
@@ -359,6 +382,27 @@ impl Sim {
         self.routes.get(i).map(|r| r.goal)
     }
 
+    /// Spawn an agent that will visit several places in turn.
+    ///
+    /// The first leg is walked to immediately; the rest are held on the route
+    /// and taken up as each is reached. An empty `legs` is the same as
+    /// `spawn_toward` with no goal at all, so callers do not need to special-case
+    /// a population with no itinerary.
+    pub fn spawn_with_itinerary(
+        &mut self,
+        params: crate::world::SpawnParams,
+        legs: &[Leg],
+    ) -> AgentId {
+        let Some((first, rest)) = legs.split_first() else {
+            return self.spawn_to_nearest_exit(params);
+        };
+        let id = self.spawn_toward(params, first.goal, first.to_exit);
+        self.routes[id as usize].chain = rest.to_vec();
+        self.routes[id as usize].dwell_on_arrival = first.dwell_s;
+        self.world.dwell_left[id as usize] = 0.0;
+        id
+    }
+
     /// Point an existing agent at a new goal.
     ///
     /// `to_exit` says whether that goal is a way out; only agents heading for
@@ -371,7 +415,14 @@ impl Sim {
         }
         let from = Vec2::new(self.world.pos_x[i] as f64, self.world.pos_y[i] as f64);
         let r = self.world.radius[i] as f64;
+        // Carry the itinerary across. `plan` builds a fresh route, and losing
+        // the chain here would silently end an agent's plans the first time it
+        // got stuck and replanned.
+        let chain = std::mem::take(&mut self.routes[i].chain);
+        let dwell = self.routes[i].dwell_on_arrival;
         self.routes[i] = self.plan(from, goal, r, to_exit);
+        self.routes[i].chain = chain;
+        self.routes[i].dwell_on_arrival = dwell;
         self.stuck_ticks[i] = 0;
         if self.world.state[i] == AgentState::Dwelling {
             self.world.state[i] = AgentState::Evacuating;
@@ -585,6 +636,8 @@ impl Sim {
             points,
             next,
             goal,
+            chain: Vec::new(),
+            dwell_on_arrival: 0.0,
             to_exit,
         }
     }
@@ -598,6 +651,7 @@ impl Sim {
             .rebuild(&self.world.pos_x, &self.world.pos_y, &self.world.active);
 
         // 2. Follow routes: pick each agent's desired velocity.
+        self.advance_itineraries(dt);
         self.steer();
         self.apply_terrain_speed();
 
@@ -734,13 +788,16 @@ impl Sim {
             }
             self.stuck_ticks[i] = 0;
 
-            let from = Vec2::new(self.world.pos_x[i] as f64, self.world.pos_y[i] as f64);
             let goal = self.routes[i].goal;
             if goal == Vec2::ZERO && self.routes[i].points.is_empty() {
                 continue;
             }
+            // Through `retarget`, not `plan`. Planning directly rebuilds the
+            // route and drops the itinerary with it, so an agent that got stuck
+            // once quietly abandoned everywhere it still had to go — which
+            // reads as "some agents leave early" and takes a day to find.
             let to_exit = self.routes[i].to_exit;
-            self.routes[i] = self.plan(from, goal, self.world.radius[i] as f64, to_exit);
+            self.retarget(i, goal, to_exit);
         }
     }
 
@@ -877,6 +934,64 @@ impl Sim {
             }
             self.world.des_x[i] *= m;
             self.world.des_y[i] *= m;
+        }
+    }
+
+    /// Move agents on to the next leg of their itinerary.
+    ///
+    /// Three states, in order: walking to this leg's goal, standing at it for
+    /// the leg's dwell, then taking the next leg. Nothing here touches an agent
+    /// with an empty chain and no dwell, which is every agent in an ordinary
+    /// evacuation.
+    fn advance_itineraries(&mut self, dt: f32) {
+        let wp_r = self.params.waypoint_radius as f64;
+        let mut moving_on: Vec<(usize, Leg)> = Vec::new();
+
+        for i in 0..self.world.len() {
+            if !self.world.active[i] {
+                continue;
+            }
+            let route = &mut self.routes[i];
+            if route.chain.is_empty() && route.dwell_on_arrival <= 0.0 {
+                continue;
+            }
+
+            // Standing at a goal: count down, and do nothing else until done.
+            if self.world.dwell_left[i] > 0.0 {
+                self.world.dwell_left[i] -= dt;
+                if self.world.dwell_left[i] > 0.0 {
+                    continue;
+                }
+                self.world.dwell_left[i] = 0.0;
+                self.world.state[i] = AgentState::Walking;
+            } else {
+                let p = Vec2::new(self.world.pos_x[i] as f64, self.world.pos_y[i] as f64);
+                if p.distance(route.goal) > wp_r {
+                    continue;
+                }
+                // Just arrived. Serve this leg's wait before taking the next.
+                if route.dwell_on_arrival > 0.0 {
+                    self.world.dwell_left[i] = route.dwell_on_arrival;
+                    // Zeroed so a crowd jostling around the goal cannot arrive
+                    // twice and restart the wait.
+                    route.dwell_on_arrival = 0.0;
+                    self.world.state[i] = AgentState::Dwelling;
+                    continue;
+                }
+            }
+
+            if self.routes[i].chain.is_empty() {
+                continue;
+            }
+            let leg = self.routes[i].chain.remove(0);
+            moving_on.push((i, leg));
+        }
+
+        for (i, leg) in moving_on {
+            self.retarget(i, leg.goal, leg.to_exit);
+            // `retarget` replans and so rebuilds the route; the next leg's wait
+            // has to be reattached after it.
+            self.routes[i].dwell_on_arrival = leg.dwell_s;
         }
     }
 

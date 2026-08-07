@@ -113,6 +113,12 @@ pub struct World {
     pub tri: Vec<u32>,
     /// Seconds of patience remaining before an agent reconsiders its route.
     pub patience_left: Vec<f32>,
+    /// Seconds an agent still has to stand at its current goal.
+    ///
+    /// Positive only while dwelling. An agent counts down here rather than
+    /// against a wall-clock deadline so that pausing, stepping and replaying a
+    /// run all give the same answer — the simulation's only clock is its tick.
+    pub dwell_left: Vec<f32>,
 
     // --- cold ----------------------------------------------------------
     pub cold: Vec<AgentCold>,
@@ -155,6 +161,7 @@ impl World {
         self.population.reserve(n);
         self.tri.reserve(n);
         self.patience_left.reserve(n);
+        self.dwell_left.reserve(n);
         self.cold.reserve(n);
     }
 
@@ -223,6 +230,7 @@ impl World {
         self.population.push(p.population);
         self.tri.push(NO_TRIANGLE);
         self.patience_left.push(f32::INFINITY);
+        self.dwell_left.push(0.0);
 
         self.cold.push(AgentCold {
             spawned_at: self.time,
