@@ -68,7 +68,10 @@ open("venue.json", "w").write(result.venue.model_dump_json(exclude_none=True))
 2. **calibrate** (`calibration`) — decide drawing-units-per-metre.
 3. **map layers** (`layers`) — which layers are walls, doors, furniture, junk.
 4. **repair** (`topology`) — dedupe, snap, merge collinear, chain, close
-   junctions, infer openings from gaps.
+   junctions, read openings from a door layer and infer the rest from gaps.
+   Where both point at the same place the drawing wins, because two overlapping
+   openings in one wall is a compiler warning caused entirely by the importer
+   failing to spot its own duplicate.
 5. **emit** (`emit`) — a Venue document with per-element provenance.
 
 `ImportResult` carries the working from every stage, not just the document.
@@ -110,9 +113,6 @@ Every dependency in the product path must be permissive —
 ## Not built yet
 
 - **PDF vector import.** `import_file` raises `UnsupportedFileError` naming it.
-- **Door layers.** Openings are inferred from gaps in wall runs. Segments on a
-  door layer are counted and reported as unused — a drawing that says where its
-  doors are should outrank inference, and does not yet.
 - **AI raster import** (track A5) — photographed and scanned plans.
 - **Multi-floor.** Every import produces one floor, `f0`. The engine supports
   more (`cf_sim::building`); the importer does not populate it.

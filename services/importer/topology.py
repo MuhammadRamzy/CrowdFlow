@@ -561,11 +561,28 @@ def door_openings(
         pts = sorted({p for s in cluster for p in (s.a, s.b)})
         if len(pts) < 2:
             continue
+        # The opening width is the **leaf length**, which is the longest single
+        # straight segment in the cluster.
+        #
+        # Not the widest extent across the cluster, which was the first attempt
+        # and is wrong for the way doors are actually drawn. CAD shows a door
+        # swung open at 90 degrees: a leaf perpendicular to the wall plus an arc
+        # from closed to open. The widest extent is then hinge-to-leaf-tip
+        # *diagonally* — 1.56 m for a 1.1 m door, comfortably inside the
+        # plausible range and comfortably wrong.
+        #
+        # The leaf and the arc radius both equal the opening. The arc arrives
+        # here already flattened into many short segments, so the longest single
+        # segment is the leaf.
+        longest = max(cluster, key=lambda seg: (seg.length, seg.a, seg.b))
+        leaf = longest.length
         far = max(
             ((distance(p, q), p, q) for i, p in enumerate(pts) for q in pts[i + 1 :]),
             key=lambda t: (t[0], t[1], t[2]),
         )
-        width, p, q = far
+        # Fall back to the extent for a door drawn as a plain gap-spanning line,
+        # where there is no leaf to be longer than everything else.
+        width, p, q = (leaf, longest.a, longest.b) if opts.gap_min_m <= leaf <= opts.gap_max_m else far
         if not (opts.gap_min_m <= width <= opts.gap_max_m):
             continue
         d = distance(p, q)

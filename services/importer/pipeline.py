@@ -22,10 +22,12 @@ from importer import calibration, dxf
 from importer.calibration import Scale
 from importer.errors import ScaleUnknownError, UnsupportedFileError
 from importer.layers import LayerMapping, LayerRole, LayerSummary, partition_by_role, summarise
+from importer.geometry import distance
 from importer.linework import LineWork, Segment
 from importer.schema.venue import VenueDoc
 from importer.topology import (
     OpeningCandidate,
+    door_openings,
     RepairOptions,
     RepairReport,
     WallRun,
@@ -122,14 +124,14 @@ def import_file(path: str | Path, opts: ImportOptions | None = None) -> ImportRe
     report = RepairReport()
     runs, openings = repair_walls(wall_segments, opts.repair, report)
 
-    # A door layer, where present, outranks gaps inferred from wall runs: the
-    # drawing said where the doors are, and inference is only a fallback.
+    # A door layer, where present, outranks gaps inferred from wall runs. The
+    # drawing *said* where the doors are; inference is the fallback for drawings
+    # that did not. Where both point at the same place, the drawing wins and the
+    # gap is dropped rather than emitted as a second door beside the first.
     door_segments = buckets.get(LayerRole.DOOR, [])
     if door_segments:
-        warnings.append(
-            f"{len(door_segments)} segment(s) on door layers are not yet used — "
-            "openings are currently inferred from gaps in wall runs only"
-        )
+        from_layer = door_openings(door_segments, opts.repair)
+        openings = _prefer_drawn(from_layer, openings, opts.repair)
 
     # 5. emit
     venue = _emit(runs, openings, scale, opts, p.name, warnings)
@@ -141,6 +143,31 @@ def import_file(path: str | Path, opts: ImportOptions | None = None) -> ImportRe
         repair=report,
         warnings=warnings,
     )
+
+
+def _prefer_drawn(
+    drawn: list[OpeningCandidate],
+    inferred: list[OpeningCandidate],
+    opts: RepairOptions,
+) -> list[OpeningCandidate]:
+    """Merge door-layer openings with gap-inferred ones, drawn evidence first.
+
+    An inferred gap that sits on top of a drawn door is the *same door*, found
+    twice. Emitting both puts two overlapping openings in one wall, which the
+    compiler then reports as an overlap — a warning caused entirely by the
+    importer being unable to recognise its own duplicate.
+
+    Kept apart by centre distance rather than by identity, because the two
+    stages derive the centre differently and will never agree exactly.
+    """
+    reach = max(opts.gap_max_m, 1.0)
+    out = list(drawn)
+    for gap in inferred:
+        if any(distance(gap.centre, d.centre) <= reach for d in drawn):
+            continue
+        out.append(gap)
+    out.sort(key=lambda o: (o.centre, o.width_m))
+    return out
 
 
 def _to_metres(work: LineWork, scale: Scale) -> LineWork:

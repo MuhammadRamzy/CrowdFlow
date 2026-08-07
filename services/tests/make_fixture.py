@@ -56,6 +56,35 @@ def hall_with_two_doors(path: Path) -> None:
     doc.saveas(path)
 
 
+def hall_with_a_door_layer(path: Path) -> None:
+    """The same hall, but the doors are *drawn* rather than left as gaps.
+
+    A door on a door layer is a leaf plus a swing arc. Both span exactly the
+    opening, which is what lets the importer read a width without recognising
+    the symbol.
+
+    The south wall is continuous here — no gap — so anything the importer finds
+    can only have come from the door layer.
+    """
+    doc = ezdxf.new("R2010", setup=True)
+    doc.header["$INSUNITS"] = 4
+    ms = doc.modelspace()
+
+    for a, b in [
+        ((0, 0), (20000, 0)),
+        ((20000, 0), (20000, 12000)),
+        ((20000, 12000), (0, 12000)),
+        ((0, 12000), (0, 0)),
+    ]:
+        ms.add_line(a, b, dxfattribs={"layer": "A-WALL"})
+
+    # A 1.1 m door at x = 9000: leaf, then its swing arc.
+    ms.add_line((9000, 0), (9000, 1100), dxfattribs={"layer": "A-DOOR"})
+    ms.add_arc((9000, 0), 1100, 0, 90, dxfattribs={"layer": "A-DOOR"})
+
+    doc.saveas(path)
+
+
 def unitless(path: Path) -> None:
     """A drawing that declines to say what its units are."""
     doc = ezdxf.new("R2010", setup=True)
@@ -76,6 +105,7 @@ def text_only(path: Path) -> None:
 def write_all(into: Path) -> None:
     into.mkdir(parents=True, exist_ok=True)
     hall_with_two_doors(into / "hall-mm.dxf")
+    hall_with_a_door_layer(into / "hall-doorlayer.dxf")
     unitless(into / "unitless.dxf")
     text_only(into / "text-only.dxf")
 

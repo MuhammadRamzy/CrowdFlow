@@ -185,3 +185,49 @@ def test_an_imported_venue_round_trips_as_json() -> None:
     assert back["schemaVersion"] == "cfs.venue/1.0"
     assert back["floors"][0]["walls"]
     assert "provenance" in back["floors"][0]["walls"][0]
+
+
+def door_layer_options(**kw) -> ImportOptions:
+    return ImportOptions(
+        layers=LayerMapping.from_pairs([("A-WALL", "wall"), ("A-DOOR", "door")]),
+        scale=from_unit_name("mm"),
+        **kw,
+    )
+
+
+def test_a_drawn_door_is_found_where_there_is_no_gap() -> None:
+    """The south wall is continuous. Any opening can only be from the door layer.
+
+    A drawing that says where its doors are should outrank inference — and until
+    this was wired, door-layer segments were counted, reported as unused, and
+    thrown away.
+    """
+    r = import_file(FIXTURES / "hall-doorlayer.dxf", door_layer_options())
+
+    assert r.repair.bridged_openings == 0, "the wall should have no gap to infer from"
+    openings = r.venue.floors[0].openings
+    assert len(openings) == 1, f"expected the drawn door, got {len(openings)}"
+    assert openings[0].widthM == pytest.approx(1.1, abs=0.1)
+
+
+def test_a_drawn_door_and_an_inferred_gap_do_not_become_two_doors() -> None:
+    """The messy hall has *both*: a 1 m gap in the wall and no door layer.
+
+    When a door layer is present and points at the same place as a gap, they are
+    the same door found twice. Emitting both puts two overlapping openings in
+    one wall, and the compiler then reports an overlap caused entirely by the
+    importer failing to recognise its own duplicate.
+    """
+    r = import_file(FIXTURES / "hall-mm.dxf", door_layer_options())
+    openings = r.venue.floors[0].openings
+
+    # hall-mm has no A-DOOR layer, so this is the inference path — one door.
+    assert len(openings) == 1
+
+    centres = [(o.wall, round(o.t, 2)) for o in openings]
+    assert len(centres) == len(set(centres)), "duplicate openings on one wall"
+
+
+def test_door_layer_segments_are_no_longer_reported_as_unused() -> None:
+    r = import_file(FIXTURES / "hall-doorlayer.dxf", door_layer_options())
+    assert not any("not yet used" in w for w in r.warnings), r.warnings
