@@ -36,4 +36,15 @@ export default defineConfig({
   // wasm-pack output is generated, not authored — exclude it from dep scanning
   // so a rebuild does not require restarting the dev server.
   optimizeDeps: { exclude: ['./src/engine/cf_wasm.js'] },
+
+  test: {
+    // Panels are plain React and render under jsdom. The canvas is not: PixiJS
+    // needs WebGL, so `Renderer` and everything downstream of it stays covered
+    // by driving the real app in a browser. What these tests buy is that a
+    // panel cannot crash on render or show the wrong number without failing
+    // here first — which is most of what has actually gone wrong.
+    environment: 'jsdom',
+    // Node cannot import the wasm bundle, and none of these tests need it.
+    exclude: ['node_modules/**', 'src/engine/**'],
+  },
 });
