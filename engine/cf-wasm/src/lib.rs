@@ -286,13 +286,71 @@ impl Simulation {
         floor: usize,
         scenario_json: &str,
     ) -> Result<Simulation, JsError> {
+        Self::plan_with_seed(venue, floor, scenario_json, None)
+    }
+
+    /// Run the same scenario across `runs` seeds and report how long each took.
+    ///
+    /// # Why this is not one run
+    ///
+    /// A single run is one draw from the distributions the scenario specifies —
+    /// one set of walking speeds, one set of body sizes, one arrival order. It
+    /// is a sample, not an answer, and the dossier already tells a reader that
+    /// a submission should quote a spread rather than a figure. Until now the
+    /// product could not produce one, which made that sentence an instruction
+    /// the tool could not follow.
+    ///
+    /// Seeds are `scenario.seed + i`, so the set is reproducible from the
+    /// document and run 0 is exactly what `fromScenario` gives — the number on
+    /// screen is in the distribution rather than beside it.
+    ///
+    /// A run that has not cleared within `max_ticks` reports `f64::NAN` rather
+    /// than its truncated time. An evacuation that did not finish has no
+    /// evacuation time, and averaging in the moment we gave up would quietly
+    /// improve the mean the longer the tool waited.
+    #[wasm_bindgen(js_name = egressDistribution)]
+    pub fn egress_distribution(
+        venue: &CompiledVenue,
+        floor: usize,
+        scenario_json: &str,
+        runs: u32,
+        max_ticks: u32,
+    ) -> Result<Vec<f64>, JsError> {
+        let mut out = Vec::with_capacity(runs as usize);
+        for i in 0..runs {
+            let mut sim = Self::plan_with_seed(venue, floor, scenario_json, Some(i as u64))?;
+            let mut cleared = f64::NAN;
+            for _ in 0..max_ticks {
+                sim.step();
+                if sim.active_count() == 0 && sim.pending_count() == 0 {
+                    cleared = sim.time();
+                    break;
+                }
+            }
+            out.push(cleared);
+        }
+        Ok(out)
+    }
+
+    fn plan_with_seed(
+        venue: &CompiledVenue,
+        floor: usize,
+        scenario_json: &str,
+        seed_offset: Option<u64>,
+    ) -> Result<Simulation, JsError> {
         let f = venue
             .graph
             .floors
             .get(floor)
             .ok_or_else(|| JsError::new("floor index out of range"))?;
-        let doc: ScenarioDoc = serde_json::from_str(scenario_json)
+        let mut doc: ScenarioDoc = serde_json::from_str(scenario_json)
             .map_err(|e| JsError::new(&format!("scenario document is not valid: {e}")))?;
+
+        // Shift the *document* seed, not just the simulation's. The planner
+        // draws walking speeds, body sizes and placement from `doc.seed`;
+        // varying only the physics seed would give every run the same crowd and
+        // report a spread far narrower than the scenario actually specifies.
+        doc.seed = doc.seed.wrapping_add(seed_offset.unwrap_or(0));
 
         let mut runner = ScenarioRunner::plan(&doc, &venue.doc, f);
         let entries = runner.entry_doors().to_vec();

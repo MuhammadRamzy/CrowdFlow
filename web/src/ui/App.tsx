@@ -22,7 +22,7 @@ import { SessionHistory, History, RemoveOpening, RemoveWall, RemoveZone } from '
 import { defaultScenario } from '../doc/scenario';
 import type { ScenarioDoc } from '../schema/scenario';
 import type { VenueDoc } from '../schema/venue';
-import { engineVersion, loadEngine, Run, Venue } from '../engine';
+import { engineVersion, loadEngine, Run, summariseEgress, Venue } from '../engine';
 import { useApp } from '../state/store';
 import { Inspector } from './Inspector';
 import { StatusBar } from './StatusBar';
@@ -52,6 +52,15 @@ const HINTS: Record<Exclude<ToolId, 'select'>, string> = {
 
 /** Physics runs at 20 Hz; this is the tick length in milliseconds. */
 const TICK_MS = 50;
+
+/**
+ * Runs behind the figure the dossier quotes.
+ *
+ * Ten is enough for a spread to mean something and few enough that generating
+ * a report stays a beat rather than a wait — it is synchronous on the main
+ * thread until it moves to a worker.
+ */
+const REPORT_RUNS = 10;
 
 export function App() {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -528,7 +537,25 @@ export function App() {
       heatmap = await r.snapshot();
       r.setDensity(st.showHeatmap ? run.density(st.heatmapPeak) : null);
     }
+    // Repeated runs, so the dossier can quote a spread rather than a sample.
+    // Done here rather than during playback because it is synchronous and
+    // proportional to the count — the report is the moment a reviewer is
+    // willing to wait a beat, and playback is not.
+    let egressStats = null;
+    const scn = scenarioHistoryRef.current?.document;
+    const venue = venueRef.current;
+    if (scn && venue?.simulable) {
+      try {
+        egressStats = summariseEgress(venue.egressDistribution(JSON.stringify(scn), REPORT_RUNS));
+      } catch {
+        // A venue that cannot be simulated has no distribution; the report
+        // says so through the single-run figures rather than failing to open.
+        egressStats = null;
+      }
+    }
+
     setReport({
+      egressStats,
       venueName: st.venueName,
       document: historyRef.current?.document ?? null,
       walkableArea: st.walkableArea,

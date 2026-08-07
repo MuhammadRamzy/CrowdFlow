@@ -534,3 +534,66 @@ fn an_unacted_on_event_still_plans_rather_than_failing() {
     sim.step_many(50);
     assert!(sim.active_count() > 0);
 }
+
+/// Repeated runs give a *distribution*, not the same number over and over.
+///
+/// The dossier tells a reader that a submission should quote a spread across
+/// runs rather than a single figure. Until this existed, that was an
+/// instruction the tool could not follow.
+///
+/// Two things have to hold, and they pull against each other: the runs must
+/// differ from one another, and the whole set must be reproducible from the
+/// document. Both are asserted, because a batch that varied by wall-clock time
+/// would satisfy the first and quietly break determinism.
+#[test]
+fn repeated_runs_give_a_spread_and_the_same_spread_every_time() {
+    let v = CompiledVenue::from_json(&fixture()).expect("compiles");
+    let doc = scenario_json(300, "");
+
+    let a = Simulation::egress_distribution(&v, 0, &doc, 5, 6000).expect("runs");
+    assert_eq!(a.len(), 5);
+    assert!(
+        a.iter().all(|t| t.is_finite()),
+        "a run never cleared: {a:?}"
+    );
+
+    // Different seeds, different crowds, different times.
+    let spread =
+        a.iter().cloned().fold(f64::MIN, f64::max) - a.iter().cloned().fold(f64::MAX, f64::min);
+    assert!(
+        spread > 0.0,
+        "every run took exactly the same time — the seed is not reaching the \
+         population draw: {a:?}"
+    );
+
+    // And the same set again, because the seeds come from the document.
+    let b = Simulation::egress_distribution(&v, 0, &doc, 5, 6000).expect("runs");
+    assert_eq!(a, b, "the batch is not reproducible");
+
+    // Run 0 must be exactly what a single run gives, so the figure on screen
+    // sits inside the distribution rather than beside it.
+    let mut single = Simulation::from_scenario(&v, 0, &doc).expect("plans");
+    for _ in 0..6000 {
+        single.step();
+        if single.active_count() == 0 && single.pending_count() == 0 {
+            break;
+        }
+    }
+    assert_eq!(
+        a[0],
+        single.time(),
+        "run 0 diverged from a plain single run"
+    );
+}
+
+/// A run that never clears reports no time, rather than the moment we gave up.
+#[test]
+fn an_unfinished_run_has_no_egress_time() {
+    let v = CompiledVenue::from_json(&fixture()).expect("compiles");
+    // Ten ticks is half a second: nobody is out.
+    let d = Simulation::egress_distribution(&v, 0, &scenario_json(300, ""), 2, 10).expect("runs");
+    assert!(
+        d.iter().all(|t| t.is_nan()),
+        "a truncated run reported a time: {d:?}"
+    );
+}

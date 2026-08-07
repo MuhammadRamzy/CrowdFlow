@@ -21,7 +21,7 @@
  */
 
 import { Fragment } from 'react';
-import type { CompileWarning, SimStats } from '../engine';
+import type { CompileWarning, EgressStats, SimStats } from '../engine';
 import { formatClock, occupantLoad } from '../state/store';
 import type { Thresholds } from '../state/store';
 import type { VenueDoc } from '../schema/venue';
@@ -31,6 +31,8 @@ const GREEN_GUIDE_LEVEL = 82;
 const MIN_EGRESS_WIDTH_M = 0.85;
 
 export interface ReportData {
+  /** Spread across repeated runs, or null if none completed. */
+  egressStats: EgressStats | null;
   venueName: string;
   document: VenueDoc | null;
   walkableArea: number;
@@ -473,6 +475,61 @@ export function Report(props: { data: ReportData; onClose: () => void }) {
           </section>
         )}
 
+        {d.egressStats && (
+          <section>
+            <h2>Egress time across repeated runs</h2>
+            <p className="muted">
+              One run is a sample, not an answer. The figure a submission should carry is the
+              95th percentile — a mean describes a typical evening, and a venue has to cope with
+              the bad ones.
+            </p>
+            <table className="spec">
+              <tbody>
+                <tr>
+                  <th>95th percentile</th>
+                  <td className="mono">
+                    <strong>{formatClock(d.egressStats.p95S)}</strong> ({d.egressStats.p95S.toFixed(1)} s)
+                  </td>
+                </tr>
+                <tr>
+                  <th>Mean</th>
+                  <td className="mono">
+                    {formatClock(d.egressStats.meanS)} ({d.egressStats.meanS.toFixed(1)} s),
+                    sd {d.egressStats.sdS.toFixed(1)} s
+                  </td>
+                </tr>
+                <tr>
+                  <th>Range</th>
+                  <td className="mono">
+                    {formatClock(d.egressStats.minS)} to {formatClock(d.egressStats.maxS)}
+                  </td>
+                </tr>
+                <tr>
+                  <th>Runs</th>
+                  <td className="mono">
+                    {d.egressStats.n} completed
+                    {d.egressStats.unfinished > 0 && (
+                      <>
+                        {', '}
+                        <span className="caution">
+                          {d.egressStats.unfinished} did not clear
+                        </span>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            {d.egressStats.unfinished > 0 && (
+              <p className="muted">
+                A run that did not clear contributes no time. The figures above are over the runs
+                that finished, so they describe the venue only in the cases where it emptied at
+                all.
+              </p>
+            )}
+          </section>
+        )}
+
         <footer className="statement">
           <h3>Verification statement</h3>
           <p>
@@ -481,11 +538,20 @@ export function Report(props: { data: ReportData; onClose: () => void }) {
             and are <strong>not a substitute</strong> for assessment by a qualified fire safety
             engineer or the approval of the authority having jurisdiction.
           </p>
-          <p>
-            Figures are derived from a single simulation run. A submission should quote a
-            distribution across repeated runs rather than a single value. Model assumptions and
-            input parameters are listed in section 1.
-          </p>
+          {d.egressStats ? (
+            <p>
+              Egress figures are quoted from <strong>{d.egressStats.n} runs</strong> of the same
+              scenario, differing only in the seed — so each is a separate draw of walking
+              speeds, body sizes and arrival order. Model assumptions and input parameters are
+              listed in section 1.
+            </p>
+          ) : (
+            <p>
+              Figures are derived from a single simulation run. A submission should quote a
+              distribution across repeated runs rather than a single value. Model assumptions and
+              input parameters are listed in section 1.
+            </p>
+          )}
           <p>
             <strong>Verification status.</strong> The engine reproduces the UK Green Guide rate of
             passage through a 1 m doorway to within 1% (82.1 against 82 persons/m/min, at a

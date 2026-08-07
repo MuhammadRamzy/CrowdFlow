@@ -155,9 +155,86 @@ export class Venue {
     return new Run(Simulation.fromScenario(this.inner, 0, scenarioJson));
   }
 
+  /**
+   * How long the same scenario takes across `runs` different seeds, seconds.
+   *
+   * A single run is one draw from the distributions the scenario specifies —
+   * one set of walking speeds, one set of body sizes. It is a sample, not an
+   * answer. Run 0 is exactly what `runScenario` gives, so the figure on screen
+   * sits inside the distribution rather than beside it.
+   *
+   * A run that has not cleared within `maxTicks` comes back as `NaN`: an
+   * evacuation that did not finish has no evacuation time, and averaging in
+   * the moment we gave up would improve the mean the longer we waited.
+   *
+   * Synchronous and proportional to `runs` — this blocks the main thread, so
+   * keep the count modest until it moves to a worker.
+   */
+  egressDistribution(scenarioJson: string, runs: number, maxTicks = 12000): number[] {
+    if (!this.simulable) {
+      throw new Error('venue has fatal warnings and cannot be simulated');
+    }
+    return Array.from(
+      Simulation.egressDistribution(this.inner, 0, scenarioJson, runs, maxTicks),
+    );
+  }
+
   free(): void {
     this.inner.free();
   }
+}
+
+/** Summary of repeated runs, for the dossier. */
+export interface EgressStats {
+  /** Runs that completed. Excludes any that never cleared. */
+  n: number;
+  /** Runs that did not clear within the tick budget. */
+  unfinished: number;
+  meanS: number;
+  sdS: number;
+  minS: number;
+  maxS: number;
+  /**
+   * 95th percentile, seconds.
+   *
+   * The figure a submission should quote. A mean describes a typical evening;
+   * a venue has to cope with the bad ones.
+   */
+  p95S: number;
+}
+
+/**
+ * Summarise a set of run times.
+ *
+ * Unfinished runs are counted, not silently dropped: "eight of ten cleared"
+ * is a materially different statement from a mean over eight.
+ */
+export function summariseEgress(times: number[]): EgressStats | null {
+  const ok = times.filter((t) => Number.isFinite(t)).sort((a, b) => a - b);
+  const unfinished = times.length - ok.length;
+  if (ok.length === 0) return null;
+
+  const mean = ok.reduce((a, b) => a + b, 0) / ok.length;
+  // Sample standard deviation: these are runs drawn from a population of
+  // possible runs, not the population itself.
+  const sd =
+    ok.length > 1
+      ? Math.sqrt(ok.reduce((a, t) => a + (t - mean) ** 2, 0) / (ok.length - 1))
+      : 0;
+  // Nearest-rank: with ten runs the 95th percentile is the slowest of them,
+  // which is the honest reading rather than an interpolation between samples
+  // that were never observed.
+  const rank = Math.max(1, Math.ceil(0.95 * ok.length));
+
+  return {
+    n: ok.length,
+    unfinished,
+    meanS: mean,
+    sdS: sd,
+    minS: ok[0]!,
+    maxS: ok[ok.length - 1]!,
+    p95S: ok[rank - 1]!,
+  };
 }
 
 /**
