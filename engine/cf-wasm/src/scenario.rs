@@ -197,16 +197,25 @@ pub struct ScenarioRunner {
     /// because closing one removes it from that list and renumbers everything
     /// after it. Two closures in a run would then shut the wrong door, and the
     /// run would still look plausible.
-    closures: Vec<Closure>,
-    closure_cursor: usize,
+    scheduled: Vec<Scheduled>,
+    scheduled_cursor: usize,
 }
 
-/// A doorway scheduled to shut, identified by where it is.
+/// Something the scenario schedules to happen partway through the run.
 #[derive(Clone, Copy, Debug)]
-struct Closure {
+struct Scheduled {
     at_s: f64,
-    a: Vec2,
-    b: Vec2,
+    what: Effect,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Effect {
+    /// Shut a doorway, identified by where it is rather than by its index into
+    /// `Sim::exits` — closing one renumbers that list, so two closures in a run
+    /// would shut the wrong door and still look entirely plausible.
+    CloseDoor { a: Vec2, b: Vec2 },
+    /// Sound the alarm: everyone heads for the nearest exit.
+    Alarm,
 }
 
 impl ScenarioRunner {
@@ -242,17 +251,16 @@ impl ScenarioRunner {
         // Timed events. Only doorway closures are acted on; the rest still get
         // reported, because a field that round-trips and is quietly ignored
         // makes the control that edits it a lie.
-        let mut closures: Vec<Closure> = Vec::new();
+        let mut scheduled: Vec<Scheduled> = Vec::new();
         let mut unhandled = 0usize;
         for ev in &doc.events {
             match &ev.event {
                 EventKind::CloseOpening { target } => match door_of.get(target.as_str()) {
                     Some(&i) => {
                         let d = &mesh.doors[i];
-                        closures.push(Closure {
+                        scheduled.push(Scheduled {
                             at_s: ev.at_s,
-                            a: d.a,
-                            b: d.b,
+                            what: Effect::CloseDoor { a: d.a, b: d.b },
                         });
                     }
                     None => notes.push(format!(
@@ -260,13 +268,29 @@ impl ScenarioRunner {
                         ev.at_s, target
                     )),
                 },
+                EventKind::Alarm { scope, .. } => {
+                    if !matches!(scope, cf_schema::scenario::AlarmScope::All) {
+                        notes.push(format!(
+                            "alarm at {:.0} s is scoped to part of the venue; the engine sounds \
+                             it everywhere.",
+                            ev.at_s
+                        ));
+                    }
+                    scheduled.push(Scheduled {
+                        at_s: ev.at_s,
+                        what: Effect::Alarm,
+                    });
+                }
                 _ => unhandled += 1,
             }
         }
-        closures.sort_by(|x, y| x.at_s.total_cmp(&y.at_s));
+        // Stable by time. Two events at the same instant keep document order,
+        // which is the only ordering an author can reason about.
+        scheduled.sort_by(|x, y| x.at_s.total_cmp(&y.at_s));
         if unhandled > 0 {
             notes.push(format!(
-                "{unhandled} timed event(s) are not applied — only doorway closures are modelled."
+                "{unhandled} timed event(s) are not applied — the engine models doorway \
+                 closures and alarms."
             ));
         }
 
@@ -392,8 +416,8 @@ impl ScenarioRunner {
             rng,
             unplaced: 0,
             entry_doors,
-            closures,
-            closure_cursor: 0,
+            scheduled,
+            scheduled_cursor: 0,
         }
     }
 
@@ -440,33 +464,41 @@ impl ScenarioRunner {
     /// people were admitted, and folding a structural change to the venue into
     /// that count would hide it. Returns how many doorways closed.
     pub fn apply_events(&mut self, sim: &mut Sim, now: f64) -> u32 {
-        let mut closed = 0;
-        while self.closure_cursor < self.closures.len()
-            && self.closures[self.closure_cursor].at_s <= now
+        let mut fired = 0;
+        while self.scheduled_cursor < self.scheduled.len()
+            && self.scheduled[self.scheduled_cursor].at_s <= now
         {
-            let c = self.closures[self.closure_cursor];
-            self.closure_cursor += 1;
+            let ev = self.scheduled[self.scheduled_cursor];
+            self.scheduled_cursor += 1;
 
-            // Match by position: the index into `Sim::exits` shifts as doors
-            // close, but a doorway does not move.
-            let found = sim
-                .exits()
-                .iter()
-                .position(|e| e.a.distance(c.a) < 1e-6 && e.b.distance(c.b) < 1e-6);
-            match found {
-                Some(i) => {
-                    if sim.close_exit(i) {
-                        closed += 1;
+            match ev.what {
+                Effect::CloseDoor { a, b } => {
+                    // Match by position: the index into `Sim::exits` shifts as
+                    // doors close, but a doorway does not move.
+                    let found = sim
+                        .exits()
+                        .iter()
+                        .position(|e| e.a.distance(a) < 1e-6 && e.b.distance(b) < 1e-6);
+                    match found {
+                        Some(i) => {
+                            if sim.close_exit(i) {
+                                fired += 1;
+                            }
+                        }
+                        None => self.notes.push(format!(
+                            "a doorway due to close at {:.0} s was not in the exit set — \
+                             it may already be shut, or be in use as an entrance.",
+                            ev.at_s
+                        )),
                     }
                 }
-                None => self.notes.push(format!(
-                    "a doorway due to close at {:.0} s was not in the exit set — \
-                     it may already be shut, or be in use as an entrance.",
-                    c.at_s
-                )),
+                Effect::Alarm => {
+                    sim.evacuate_all();
+                    fired += 1;
+                }
             }
         }
-        closed
+        fired
     }
 
     pub fn pump(&mut self, sim: &mut Sim, now: f64) -> u32 {
@@ -527,7 +559,7 @@ impl ScenarioRunner {
                             sim.spawn_to_nearest_exit(params);
                         }
                         PlannedGoal::Point(g) => {
-                            sim.spawn(params, g);
+                            sim.spawn_toward(params, g, false);
                         }
                     }
                     buckets

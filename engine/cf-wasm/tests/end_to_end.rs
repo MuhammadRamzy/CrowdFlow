@@ -453,6 +453,73 @@ fn a_scheduled_closure_shuts_a_door_mid_run() {
     );
 }
 
+/// A crowd holds in a zone until the alarm, then leaves.
+///
+/// This is the shape of a real evacuation analysis and the reason alarms and
+/// zone goals both exist: a venue full of people who are *not yet trying to
+/// leave* is the state an evacuation starts from. An analysis that begins with
+/// everyone already walking at a door has skipped the part where they notice.
+///
+/// Without the alarm the same document must leave the hall full — that is
+/// asserted too, because a test where the crowd would have left anyway proves
+/// nothing about the alarm.
+#[test]
+fn a_crowd_holds_until_the_alarm_then_evacuates() {
+    let v = CompiledVenue::from_json(&fixture()).expect("compiles");
+    let dwelling = scenario_json(80, "").replace(
+        r#""itinerary": [{"goal":{"target":"nearestExit"},"probability":1}],"#,
+        r#""itinerary": [{"goal":{"target":"zone","id":"z_hall"},"probability":1}],"#,
+    );
+
+    // Without an alarm the hall should stay largely full: their goal is a spot
+    // on the floor, not a door. A few leak out — the dwell point is in the
+    // middle of a zone that reaches the walls, so agents shuffling around it
+    // can drift across a doorway and be counted out. That is a real limitation
+    // of dwelling at a point rather than within a region, and it is why this
+    // asserts "most stay" rather than "none leave".
+    let mut held = Simulation::from_scenario(&v, 0, &dwelling).expect("plans");
+    held.step_many(2000);
+    assert!(
+        held.active_count() > 40,
+        "only {} of 80 were still inside after 100 s with no alarm — they are \
+         leaving without being told to, so this test cannot prove anything",
+        held.active_count()
+    );
+
+    // With one at 20 s, everybody should.
+    let with_alarm = dwelling.replace(
+        r#""events": [],"#,
+        r#""events": [{"atS":20.0,"kind":"alarm"}],"#,
+    );
+    let mut sim = Simulation::from_scenario(&v, 0, &with_alarm).expect("plans");
+
+    sim.step_many(300); // 15 s — before the alarm
+    let before = sim.exited_count();
+    assert!(
+        sim.active_count() > 40,
+        "the hall emptied before the alarm even sounded"
+    );
+
+    for _ in 0..12000 {
+        sim.step();
+        if sim.active_count() == 0 && sim.pending_count() == 0 {
+            break;
+        }
+    }
+
+    assert_eq!(
+        sim.active_count(),
+        0,
+        "the hall never emptied after the alarm"
+    );
+    assert!(
+        sim.exited_count() > before,
+        "the alarm sounded and nobody moved: {} out before, {} after",
+        before,
+        sim.exited_count()
+    );
+}
+
 #[test]
 fn an_unacted_on_event_still_plans_rather_than_failing() {
     let v = CompiledVenue::from_json(&fixture()).expect("compiles");

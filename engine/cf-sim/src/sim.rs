@@ -94,6 +94,15 @@ struct Route {
     next: usize,
     /// Where this route was planned to, so it can be planned again.
     goal: Vec2,
+    /// Whether that goal is a way out.
+    ///
+    /// Congestion-aware rerouting may only touch agents that are trying to
+    /// leave. An agent walking to a zone — a stand, a bar, a seat — has a goal
+    /// of its own, and re-routing it to whichever door is least busy is not
+    /// re-routing, it is overriding. That is exactly what happened: a crowd
+    /// authored to dwell in a hall was hijacked to the exits within one
+    /// reconsideration interval and the venue emptied itself with no alarm.
+    to_exit: bool,
 }
 
 impl Route {
@@ -294,11 +303,55 @@ impl Sim {
             // where a door used to be, which is what a person who has not yet
             // noticed would do. Clearing it would freeze them on the spot.
             if let Some(g) = self.nearest_exit(from) {
-                self.routes[i] = self.plan(from, g, r);
+                self.routes[i] = self.plan(from, g, r, true);
             }
             self.stuck_ticks[i] = 0;
         }
         true
+    }
+
+    /// Send everyone to the nearest exit, now.
+    ///
+    /// What an alarm does. Until one sounds, a population with a zone goal
+    /// walks to that zone and stays there — which is the point, because a venue
+    /// full of people who are not yet trying to leave is the state an
+    /// evacuation starts from, and an analysis that begins with everyone
+    /// already heading for a door skips the part where they have to notice.
+    ///
+    /// Agents already routed to an exit get the same answer back, so sounding
+    /// an alarm in a scenario that was always an evacuation costs a re-plan and
+    /// changes nothing.
+    ///
+    /// Returns how many were re-routed.
+    pub fn evacuate_all(&mut self) -> u32 {
+        let targets: Vec<(usize, Vec2, f64)> = (0..self.world.len())
+            .filter(|i| self.world.active[*i])
+            .map(|i| {
+                (
+                    i,
+                    Vec2::new(self.world.pos_x[i] as f64, self.world.pos_y[i] as f64),
+                    self.world.radius[i] as f64,
+                )
+            })
+            .collect();
+
+        let mut moved = 0;
+        for (i, from, r) in targets {
+            if let Some(g) = self.nearest_exit(from) {
+                self.routes[i] = self.plan(from, g, r, true);
+                moved += 1;
+            }
+            // Dwelling agents are not mobile, so nothing would steer them.
+            if self.world.state[i] == AgentState::Dwelling {
+                self.world.state[i] = AgentState::Evacuating;
+            }
+            self.stuck_ticks[i] = 0;
+            // Reconsider promptly rather than up to a full interval later: a
+            // crowd that has just been told to leave does not wait eight
+            // seconds before looking at which door is busiest.
+            self.world.patience_left[i] = 0.0;
+        }
+        moved
     }
 
     /// The spatial index as of the last step.
@@ -342,9 +395,18 @@ impl Sim {
     }
 
     /// Spawn an agent and immediately plan its route to `goal`.
-    pub fn spawn(&mut self, params: crate::world::SpawnParams, goal: Vec2) -> AgentId {
+    /// Spawn an agent and plan its route to `goal`.
+    ///
+    /// `to_exit` says whether that goal is a way out. Only agents heading for
+    /// one are subject to congestion-aware rerouting — see `Route::to_exit`.
+    pub fn spawn_toward(
+        &mut self,
+        params: crate::world::SpawnParams,
+        goal: Vec2,
+        to_exit: bool,
+    ) -> AgentId {
         let id = self.world.spawn(params);
-        let route = self.plan(params.position, goal, params.radius_m as f64);
+        let route = self.plan(params.position, goal, params.radius_m as f64, to_exit);
         // Slots are never reused, so routes grow in lockstep with agents.
         debug_assert_eq!(self.routes.len(), id as usize);
         self.routes.push(route);
@@ -385,7 +447,7 @@ impl Sim {
     pub fn spawn_to_nearest_exit(&mut self, params: crate::world::SpawnParams) -> AgentId {
         let best = self.nearest_exit(params.position);
         match best {
-            Some(g) => self.spawn(params, g),
+            Some(g) => self.spawn_toward(params, g, true),
             None => {
                 let id = self.world.spawn(params);
                 self.routes.push(Route::default());
@@ -480,7 +542,7 @@ impl Sim {
         }
     }
 
-    fn plan(&self, from: Vec2, goal: Vec2, radius: f64) -> Route {
+    fn plan(&self, from: Vec2, goal: Vec2, radius: f64, to_exit: bool) -> Route {
         let mut points = match &self.mesh {
             Some(m) => m.find_path(from, goal).unwrap_or_else(|| vec![goal]),
             None => vec![goal],
@@ -495,7 +557,12 @@ impl Sim {
         // A pathfound route starts at the agent's own position, so skip it.
         // The single-point fallback *is* the goal, so do not.
         let next = usize::from(points.len() > 1);
-        Route { points, next, goal }
+        Route {
+            points,
+            next,
+            goal,
+            to_exit,
+        }
     }
 
     /// Advance one tick.
@@ -648,7 +715,8 @@ impl Sim {
             if goal == Vec2::ZERO && self.routes[i].points.is_empty() {
                 continue;
             }
-            self.routes[i] = self.plan(from, goal, self.world.radius[i] as f64);
+            let to_exit = self.routes[i].to_exit;
+            self.routes[i] = self.plan(from, goal, self.world.radius[i] as f64, to_exit);
         }
     }
 
@@ -706,6 +774,10 @@ impl Sim {
             if !self.world.active[i] || !self.world.state[i].is_mobile() {
                 continue;
             }
+            // Only agents that are trying to leave. See `Route::to_exit`.
+            if !self.routes[i].to_exit {
+                continue;
+            }
             self.world.patience_left[i] -= dt;
             if self.world.patience_left[i] > 0.0 {
                 continue;
@@ -736,7 +808,7 @@ impl Sim {
 
             if let Some((_, goal)) = best {
                 if goal != self.routes[i].goal {
-                    changes.push((i, self.plan(p, goal, self.world.radius[i] as f64)));
+                    changes.push((i, self.plan(p, goal, self.world.radius[i] as f64, true)));
                 }
             }
         }
@@ -957,7 +1029,7 @@ mod tests {
     #[test]
     fn time_advances_by_exactly_dt() {
         let mut s = open_sim();
-        s.spawn(agent(0.0, 0.0), Vec2::new(5.0, 0.0));
+        s.spawn_toward(agent(0.0, 0.0), Vec2::new(5.0, 0.0), false);
         for i in 1..=10u64 {
             let st = s.step();
             assert_eq!(st.tick, i);
@@ -972,7 +1044,7 @@ mod tests {
     #[test]
     fn an_agent_walks_to_its_goal() {
         let mut s = open_sim();
-        s.spawn(agent(0.0, 0.0), Vec2::new(10.0, 0.0));
+        s.spawn_toward(agent(0.0, 0.0), Vec2::new(10.0, 0.0), false);
         for _ in 0..200 {
             s.step();
         }
@@ -995,7 +1067,7 @@ mod tests {
             a: Vec2::new(10.0, -1.0),
             b: Vec2::new(10.0, 1.0),
         }];
-        s.spawn(agent(0.0, 0.0), Vec2::new(10.0, 0.0));
+        s.spawn_toward(agent(0.0, 0.0), Vec2::new(10.0, 0.0), false);
 
         let ticks = s.run_until_empty(600);
         assert!(ticks < 600, "agent never reached the exit");
@@ -1022,7 +1094,7 @@ mod tests {
         for i in 0..40 {
             let x = -(i % 8) as f64 * 0.6;
             let y = (i / 8) as f64 * 0.6 - 1.2;
-            s.spawn(agent(x, y), Vec2::new(12.0, 0.0));
+            s.spawn_toward(agent(x, y), Vec2::new(12.0, 0.0), false);
         }
 
         for _ in 0..500 {
@@ -1051,7 +1123,7 @@ mod tests {
             for i in 0..50 {
                 let x = (i % 10) as f64 * 0.5;
                 let y = (i / 10) as f64 * 0.5;
-                s.spawn(agent(x, y), Vec2::new(20.0, 3.0));
+                s.spawn_toward(agent(x, y), Vec2::new(20.0, 3.0), false);
             }
             s
         };
@@ -1088,7 +1160,7 @@ mod tests {
             a: Vec2::new(5.0, -1.0),
             b: Vec2::new(5.0, 1.0),
         }];
-        s.spawn(agent(0.0, 0.0), Vec2::new(5.0, 0.0));
+        s.spawn_toward(agent(0.0, 0.0), Vec2::new(5.0, 0.0), false);
 
         let ticks = s.run_until_empty(10_000);
         assert!(ticks > 0 && ticks < 300, "took {ticks} ticks");
@@ -1112,9 +1184,10 @@ mod tests {
         let mut s = open_sim();
         // A tight wedge: many agents converging on one point will jam.
         for i in 0..30 {
-            s.spawn(
+            s.spawn_toward(
                 agent((i % 6) as f64 * 0.4, (i / 6) as f64 * 0.4),
                 Vec2::new(6.0, 0.6),
+                false,
             );
         }
         let mut saw_blocked = false;
