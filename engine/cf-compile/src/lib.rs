@@ -259,6 +259,31 @@ pub fn compile_floor(floor: &Floor, warnings: &mut Vec<CompileWarning>) -> Optio
         }
     }
 
+    // --- refine the mesh where a zone changes walking speed ---------------
+    //
+    // A zone stamps its multiplier onto triangles whose centroid it contains,
+    // so a zone smaller than the local triangles takes none of them. A 20 x 12
+    // hall triangulates to a handful of triangles; a 4 m stair band across it
+    // contains no centroid at all, and the stair silently does not happen.
+    //
+    // Inserting the zone's own corners as vertices refines the triangulation
+    // there, so the boundary has something to align to. They go in as **points
+    // only, never as constrained edges** — a constraint is a wall in this
+    // codebase, and turning a zone outline into one would seal a stair off from
+    // the room it is in.
+    //
+    // Only zones that actually change speed. Refining around every zone would
+    // grow the mesh for zones whose boundary the simulation does not care
+    // about, and mesh size is the budget that decides how many agents fit.
+    for zone in &floor.zones {
+        if zone.is_void || (zone.speed_multiplier - 1.0).abs() < 1e-9 {
+            continue;
+        }
+        for v in zone.polygon.points() {
+            pts.insert(*v);
+        }
+    }
+
     if pts.len() < 3 {
         warnings.push(CompileWarning::EmptyFloor {
             floor: floor.id.clone(),
