@@ -169,6 +169,19 @@ pub struct Sim {
     /// than a scan of the whole mesh. Only maintained when the mesh has
     /// non-uniform walking speeds.
     tri_hint: Vec<usize>,
+    /// When each agent left, in the order they left.
+    ///
+    /// Already sorted, because time only goes forward — which is what makes a
+    /// percentile a lookup rather than a sort over the whole run.
+    exit_times: Vec<f64>,
+    /// How many left through each exit, indexed as `exits` was at the start.
+    ///
+    /// Indexed by *original* position rather than current, so a doorway closing
+    /// mid-run does not renumber the tally and silently move one door's
+    /// throughput onto another.
+    exit_usage: Vec<u32>,
+    /// Maps a current exit index back to where it started, for `exit_usage`.
+    exit_origin: Vec<usize>,
     /// Diagnostics from the most recent tick only.
     last_solve: SolveDiagnostics,
     density: DensityGrid,
@@ -202,6 +215,9 @@ impl Sim {
             routes: Vec::new(),
             stuck_ticks: Vec::new(),
             tri_hint: Vec::new(),
+            exit_times: Vec::new(),
+            exit_usage: Vec::new(),
+            exit_origin: Vec::new(),
             last_solve: SolveDiagnostics::default(),
             density: DensityGrid::new(bounds, 0.5),
             density_interval: 4,
@@ -214,6 +230,7 @@ impl Sim {
     /// so the physics and the pathfinding cannot disagree about where the walls
     /// are — they read the same data.
     pub fn new(mesh: NavMesh, exits: Vec<ExitSpan>, params: SimParams, seed: u64) -> Self {
+        let n_exits = exits.len();
         let mut walls = Vec::new();
         let mut keys: Vec<_> = mesh.tri.constraints.iter().copied().collect();
         // Sorted so wall force accumulates in a fixed order across runs.
@@ -242,6 +259,9 @@ impl Sim {
             routes: Vec::new(),
             stuck_ticks: Vec::new(),
             tri_hint: Vec::new(),
+            exit_times: Vec::new(),
+            exit_usage: vec![0; n_exits],
+            exit_origin: (0..n_exits).collect(),
             last_solve: SolveDiagnostics::default(),
             density: DensityGrid::new(bounds, 0.5),
             density_interval: 4,
@@ -307,6 +327,11 @@ impl Sim {
 
         self.walls.push(span.segment());
         self.exits.remove(index);
+        // Keep the tally keyed to where the doorway started, or closing one
+        // would shift every later door's throughput onto its neighbour.
+        if index < self.exit_origin.len() {
+            self.exit_origin.remove(index);
+        }
 
         // Anyone routed through the closed door needs a new plan. Agents whose
         // route did not touch it get the same answer back.
@@ -427,6 +452,66 @@ impl Sim {
         if self.world.state[i] == AgentState::Dwelling {
             self.world.state[i] = AgentState::Evacuating;
         }
+    }
+
+    /// The time by which `fraction` of everyone who has left had left.
+    ///
+    /// RiMEA and ISO 20414 both ask for the shape of an evacuation, not just
+    /// its end. A single total conceals the difference between a hall that
+    /// empties steadily and one where nine tenths are out in a minute and the
+    /// last few take five — and it is the tail that describes the risk, since
+    /// those are the people still inside when conditions get worse.
+    ///
+    /// Measured against the number who *have* left, not the number spawned, so
+    /// it is meaningful mid-run. A run where nobody has left yet has no
+    /// percentile and returns `None` rather than zero, which would read as an
+    /// instantaneous evacuation.
+    pub fn egress_percentile(&self, fraction: f64) -> Option<f64> {
+        if self.exit_times.is_empty() {
+            return None;
+        }
+        let f = fraction.clamp(0.0, 1.0);
+        // Nearest rank: the quoted time is one somebody actually left at,
+        // rather than an interpolation between two departures that did not
+        // happen.
+        let rank = ((f * self.exit_times.len() as f64).ceil() as usize).max(1);
+        self.exit_times.get(rank - 1).copied()
+    }
+
+    /// How many left through each doorway, indexed as the exits were given.
+    ///
+    /// Keyed to the *original* index, so a doorway closing mid-run does not
+    /// renumber the tally and move one door's throughput onto its neighbour.
+    pub fn exit_usage(&self) -> &[u32] {
+        &self.exit_usage
+    }
+
+    /// Achieved specific flow through each doorway, persons per metre per minute.
+    ///
+    /// The figure the Green Guide plans at 82 for level egress. Computed over
+    /// the whole run rather than a steady window, so a door that was busy for
+    /// thirty seconds of a ten-minute evacuation reads low — which is correct
+    /// for judging whether it was *used*, and not comparable to the saturated
+    /// figure `calibration::measure_doorway_flow` produces.
+    pub fn exit_specific_flow(&self) -> Vec<f64> {
+        let elapsed = self.world.time;
+        self.exit_usage
+            .iter()
+            .enumerate()
+            .map(|(i, &n)| {
+                let width = self
+                    .exit_origin
+                    .iter()
+                    .position(|&o| o == i)
+                    .and_then(|cur| self.exits.get(cur))
+                    .map(|e| e.segment().length())
+                    .unwrap_or(0.0);
+                if elapsed <= 0.0 || width <= 0.0 {
+                    return 0.0;
+                }
+                n as f64 / (elapsed / 60.0) / width
+            })
+            .collect()
     }
 
     /// The spatial index as of the last step.
@@ -1100,7 +1185,7 @@ impl Sim {
         if self.exits.is_empty() {
             return;
         }
-        let mut leaving: Vec<AgentId> = Vec::new();
+        let mut leaving: Vec<(AgentId, usize)> = Vec::new();
 
         for i in 0..self.world.len() {
             if !self.world.active[i] {
@@ -1114,18 +1199,27 @@ impl Sim {
             // person passing through a door physically does.
             let swept = Segment::new(from, to);
             let r = self.world.radius[i] as f64;
-            if self
+            // Which doorway, not merely whether one: a report that cannot say
+            // where the crowd went cannot say which door carried the building.
+            if let Some(e) = self
                 .exits
                 .iter()
-                .any(|e| cf_geom::segment_distance(&swept, &e.segment()) <= r)
+                .position(|e| cf_geom::segment_distance(&swept, &e.segment()) <= r)
             {
-                leaving.push(i as AgentId);
+                leaving.push((i as AgentId, e));
             }
         }
 
         // Ascending order, so the exit log is reproducible.
-        for id in leaving {
+        let now = self.world.time;
+        for (id, exit) in leaving {
             self.world.despawn(id);
+            self.exit_times.push(now);
+            if let Some(&origin) = self.exit_origin.get(exit) {
+                if let Some(slot) = self.exit_usage.get_mut(origin) {
+                    *slot += 1;
+                }
+            }
         }
     }
 }

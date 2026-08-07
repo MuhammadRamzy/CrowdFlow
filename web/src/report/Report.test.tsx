@@ -16,6 +16,8 @@ import { Report, type ReportData } from './Report';
 function data(over: Partial<ReportData> = {}): ReportData {
   return {
     egressStats: null,
+    egressCurve: null,
+    exitUsage: null,
     venueName: 'Test hall',
     document: null,
     walkableArea: 240,
@@ -144,3 +146,60 @@ describe('Report', () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+describe('egress shape and exit usage', () => {
+  it('shows how the venue cleared, not just when it finished', () => {
+    render(
+      <Report
+        data={data({ egressCurve: [17.9, 31.8, 36.2, 37.2] })}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/how the venue cleared/i)).toBeTruthy();
+    expect(screen.getByText(/90% cleared/i)).toBeTruthy();
+    // It is the tail that describes the risk, so the reasoning is on the page
+    // rather than left for the reader to supply.
+    expect(screen.getByText(/tail that describes the risk/i)).toBeTruthy();
+  });
+
+  it('does not invent a time for a percentile nobody reached', () => {
+    render(<Report data={data({ egressCurve: [12.0, null, null, null] })} onClose={vi.fn()} />);
+    // An em dash, not a zero — zero reads as an instantaneous evacuation.
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+
+  it('attributes the crowd to the doors that carried it', () => {
+    render(
+      <Report
+        data={data({
+          exitUsage: [
+            { count: 47, specificFlow: 12.4 },
+            { count: 33, specificFlow: 8.7 },
+          ],
+        })}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/which exits carried the crowd/i)).toBeTruthy();
+    expect(screen.getByText('47')).toBeTruthy();
+    // 47 of 80 is 59%.
+    expect(screen.getByText('59%')).toBeTruthy();
+  });
+
+  it('flags an exit that carried nobody without calling it faulty', () => {
+    render(
+      <Report
+        data={data({
+          exitUsage: [
+            { count: 80, specificFlow: 20.0 },
+            { count: 0, specificFlow: 0 },
+          ],
+        })}
+        onClose={vi.fn()}
+      />,
+    );
+    // An unused exit may simply be far from the crowd. Saying so is the
+    // difference between a finding and an accusation.
+    expect(screen.getByText(/not necessarily faulty/i)).toBeTruthy();
+  });
+})

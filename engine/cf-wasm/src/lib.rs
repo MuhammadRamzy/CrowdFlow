@@ -616,6 +616,32 @@ fn spawn_scattered_into(sim: &mut Sim, count: u32) -> u32 {
 
 #[wasm_bindgen]
 impl Simulation {
+    /// The time by which `fraction` of those who left had left, seconds.
+    ///
+    /// `NaN` when nobody has left yet — zero would read as an instantaneous
+    /// evacuation, which is the most flattering possible wrong answer.
+    #[wasm_bindgen(js_name = egressPercentile)]
+    pub fn egress_percentile(&self, fraction: f64) -> f64 {
+        self.sim.egress_percentile(fraction).unwrap_or(f64::NAN)
+    }
+
+    /// How many left through each doorway, in the order the exits were given.
+    #[wasm_bindgen(js_name = exitUsage)]
+    pub fn exit_usage(&self) -> Vec<u32> {
+        self.sim.exit_usage().to_vec()
+    }
+
+    /// Achieved specific flow through each doorway, persons per metre per minute.
+    ///
+    /// Over the whole run, so a door busy for thirty seconds of a ten-minute
+    /// evacuation reads low. That is right for judging whether it was *used*
+    /// and is not comparable to the saturated figure the calibration harness
+    /// produces against the Green Guide's 82.
+    #[wasm_bindgen(js_name = exitSpecificFlow)]
+    pub fn exit_specific_flow(&self) -> Vec<f64> {
+        self.sim.exit_specific_flow()
+    }
+
     /// The density field as bytes, one per cell, row-major.
     ///
     /// Quantised to `0..=255` over `0..maxDensity` persons/m², because this is

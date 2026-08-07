@@ -13,7 +13,7 @@ end, the model meets its headline benchmark (82.1 p/m/min through a 1 m door
 against the Green Guide's 82), and the whole RiMEA suite runs. One calibration
 gap remains; see "Next up".
 **Last updated:** 2026-08-06 by Ramzy's session
-**Tree status:** green — 275 Rust, 49 web and 38 Python tests passing, 4 ignored
+**Tree status:** green — 280 Rust, 53 web and 38 Python tests passing, 4 ignored
 (two are measurement tools rather than assertions: the repulsion sweep and the
 scale benchmark), and one of those two is a
 diagnostic tool rather than a test. clippy clean, wasm32 builds, web typecheck
@@ -60,7 +60,7 @@ The frontend is real and drives the real engine — nothing on screen is mocked.
 
 ### Next up — pick from the top
 
-The engine is in good shape. **275 Rust, 49 web, 38 Python tests; 4 ignored** — and one of those
+The engine is in good shape. **280 Rust, 53 web, 38 Python tests; 4 ignored** — and one of those
 two is a diagnostic tool rather than a test. Every RiMEA case the engine
 is capable of satisfying, satisfies.
 

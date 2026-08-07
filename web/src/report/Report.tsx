@@ -33,6 +33,10 @@ const MIN_EGRESS_WIDTH_M = 0.85;
 export interface ReportData {
   /** Spread across repeated runs, or null if none completed. */
   egressStats: EgressStats | null;
+  /** `[50%, 90%, 99%, 100%]` cleared, seconds. Nulls before anyone leaves. */
+  egressCurve: (number | null)[] | null;
+  /** Persons who left by each doorway, and the flow each achieved. */
+  exitUsage: { count: number; specificFlow: number }[] | null;
   venueName: string;
   document: VenueDoc | null;
   walkableArea: number;
@@ -472,6 +476,74 @@ export function Report(props: { data: ReportData; onClose: () => void }) {
                   </li>
                 ))}
             </ul>
+          </section>
+        )}
+
+        {d.egressCurve && d.egressCurve.some((t) => t !== null) && (
+          <section>
+            <h2>How the venue cleared</h2>
+            <p className="muted">
+              A single total conceals the difference between a hall that empties steadily and
+              one where nine tenths are out quickly and the last few take far longer. It is the
+              tail that describes the risk: those are the people still inside as conditions
+              worsen.
+            </p>
+            <table className="spec">
+              <tbody>
+                {(['50%', '90%', '99%', '100%'] as const).map((label, i) => {
+                  const t = d.egressCurve![i];
+                  return (
+                    <tr key={label}>
+                      <th>{label} cleared</th>
+                      <td className="mono">
+                        {t == null ? '—' : `${formatClock(t)} (${t.toFixed(1)} s)`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </section>
+        )}
+
+        {d.exitUsage && d.exitUsage.length > 0 && (
+          <section>
+            <h2>Which exits carried the crowd</h2>
+            <p className="muted">
+              Achieved flow is measured over the whole evacuation, so a door busy only briefly
+              reads low. That is the right reading for whether an exit was <em>used</em>, and it
+              is not the saturated figure the Green Guide's 82 persons/m/min describes.
+            </p>
+            <table className="findings">
+              <thead>
+                <tr>
+                  <th>Exit</th>
+                  <th>Persons</th>
+                  <th>Share</th>
+                  <th>Achieved flow</th>
+                </tr>
+              </thead>
+              <tbody>
+                {d.exitUsage.map((e, i) => {
+                  const total = d.exitUsage!.reduce((a, x) => a + x.count, 0);
+                  const share = total > 0 ? (e.count / total) * 100 : 0;
+                  return (
+                    <tr key={i} className={e.count === 0 ? 'is-caution' : undefined}>
+                      <td className="finding-clause">Exit {i + 1}</td>
+                      <td className="mono">{e.count}</td>
+                      <td className="mono">{share.toFixed(0)}%</td>
+                      <td className="mono">{e.specificFlow.toFixed(1)} p/m/min</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {d.exitUsage.some((e) => e.count === 0) && (
+              <p className="muted">
+                An exit that carried nobody is not necessarily faulty — it may simply be far from
+                where the crowd was. It is worth checking that it was reachable.
+              </p>
+            )}
           </section>
         )}
 

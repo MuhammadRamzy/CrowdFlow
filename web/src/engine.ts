@@ -354,6 +354,33 @@ export class Run {
     };
   }
 
+  /**
+   * The time by which `fraction` of those who left had left, seconds.
+   *
+   * `null` when nobody has left yet. Zero would read as an instantaneous
+   * evacuation, which is the most flattering possible wrong answer.
+   */
+  egressPercentile(fraction: number): number | null {
+    const t = this.inner.egressPercentile(fraction);
+    return Number.isFinite(t) ? t : null;
+  }
+
+  /** How many left through each doorway, in the order the exits were given. */
+  exitUsage(): number[] {
+    return Array.from(this.inner.exitUsage());
+  }
+
+  /**
+   * Achieved specific flow per doorway, persons/m/min.
+   *
+   * Over the whole run, so a door busy for thirty seconds of a ten-minute
+   * evacuation reads low — right for judging whether it was *used*, and not
+   * comparable to the Green Guide's saturated 82.
+   */
+  exitSpecificFlow(): number[] {
+    return Array.from(this.inner.exitSpecificFlow());
+  }
+
   /** Highest density reached anywhere during the run, persons/m². */
   get peakDensity(): number {
     return this.inner.peakDensity();

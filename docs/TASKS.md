@@ -92,8 +92,8 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [ ] Cohort trajectory sampling
 - [ ] Event log
 - [ ] Bottleneck detection + ranking
-- [ ] Throughput per component/opening
-- [ ] Egress metrics (50/90/99/100% cleared)
+- [x] Throughput per component/opening
+- [x] Egress metrics (50/90/99/100% cleared)
 - [ ] `cf-compliance` rule evaluator + data-driven rule format
 - [ ] NFPA 101 rule pack + hand-worked fixtures
 - [ ] Green Guide rule pack + hand-worked fixtures

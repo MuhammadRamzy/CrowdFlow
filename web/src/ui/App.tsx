@@ -554,8 +554,23 @@ export function App() {
       }
     }
 
+    // The shape of the evacuation and which doors carried it, from the run
+    // the reviewer just watched rather than from the batch — these describe
+    // *this* venue's behaviour, not a distribution over seeds.
+    const egressCurve = run
+      ? [0.5, 0.9, 0.99, 1.0].map((f) => run.egressPercentile(f))
+      : null;
+    const exitUsage = run
+      ? run.exitUsage().map((count, i) => ({
+          count,
+          specificFlow: run.exitSpecificFlow()[i] ?? 0,
+        }))
+      : null;
+
     setReport({
       egressStats,
+      egressCurve,
+      exitUsage,
       venueName: st.venueName,
       document: historyRef.current?.document ?? null,
       walkableArea: st.walkableArea,
