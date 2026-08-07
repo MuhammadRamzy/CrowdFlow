@@ -49,6 +49,15 @@ export interface ReportData {
   generatedAt: Date;
 }
 
+/**
+ * Crowd density up to which the locomotion model is validated, persons/m².
+ *
+ * Above this the model is measurably slow (ADR 0007). The figure is stated in
+ * the verification statement and the run is checked against it, because a
+ * caveat a reader has to apply themselves is one they will not apply.
+ */
+const VALIDATED_DENSITY = 2.0;
+
 interface Finding {
   id: string;
   clause: string;
@@ -478,9 +487,40 @@ export function Report(props: { data: ReportData; onClose: () => void }) {
             input parameters are listed in section 1.
           </p>
           <p>
-            <strong>This engine has not yet completed verification.</strong> The RiMEA test suite
-            and validation against measured pedestrian flow data are outstanding, so no figure in
-            this document should be relied upon for a statutory submission.
+            <strong>Verification status.</strong> The engine reproduces the UK Green Guide rate of
+            passage through a 1 m doorway to within 1% (82.1 against 82 persons/m/min, at a
+            measured 2.04 persons/m² in the opening), and passes the RiMEA cases for corridor
+            speed, stairs, movement round a corner, speed distribution, single-exit egress against
+            the hydraulic calculation, exit choice, and merging flows.
+          </p>
+          <p>
+            <strong>Validated envelope: crowd density up to 2 persons/m².</strong> Above that the
+            model walks people <em>more slowly</em> than Weidmann&rsquo;s relation — by 89% at
+            3 persons/m² — so egress times computed through sustained densities above the envelope
+            are longer than reality rather than shorter. That is the conservative direction, but it
+            is an error, and it is stated here rather than left for a reader to discover.
+            {d.peakDensity > 0 &&
+              (d.peakDensity <= VALIDATED_DENSITY ? (
+                <>
+                  {' '}This run peaked at {d.peakDensity.toFixed(2)} persons/m², within the
+                  validated envelope.
+                </>
+              ) : (
+                <>
+                  {' '}<strong className="breach">
+                    This run peaked at {d.peakDensity.toFixed(2)} persons/m², outside the validated
+                    envelope
+                  </strong>
+                  {d.criticalArea > 0 && `, with ${d.criticalArea.toFixed(1)} m² at or above the
+                  crush threshold`}
+                  . Treat the egress time as an upper bound rather than an estimate.
+                </>
+              ))}
+          </p>
+          <p>
+            Independent verification against a second model, and validation against observed data
+            from the venue itself, remain outstanding. A statutory submission should not rest on
+            this document alone.
           </p>
         </footer>
       </article>

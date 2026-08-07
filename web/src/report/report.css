@@ -358,6 +358,15 @@
 }
 
 .statement strong {
+  color: var(--navy);
+  font-weight: 600;
+}
+
+/* Red is reserved for a finding against this run, not for the headings of the
+   statement. In this document a coloured mark means something specific, and a
+   statement whose every emphasis is red teaches a reader to ignore all of it. */
+.statement .breach strong,
+.statement strong.breach {
   color: var(--fail);
 }
 
