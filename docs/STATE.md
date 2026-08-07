@@ -13,7 +13,7 @@ end, the model meets its headline benchmark (82.1 p/m/min through a 1 m door
 against the Green Guide's 82), and the whole RiMEA suite runs. One calibration
 gap remains; see "Next up".
 **Last updated:** 2026-08-06 by Ramzy's session
-**Tree status:** green — 246 tests passing, 2 ignored, and one of those two is a
+**Tree status:** green — 250 tests passing, 2 ignored, and one of those two is a
 diagnostic tool rather than a test. clippy clean, wasm32 builds, web typecheck
 and production build clean.
 
@@ -58,7 +58,7 @@ The frontend is real and drives the real engine — nothing on screen is mocked.
 
 ### Next up — pick from the top
 
-The engine is in good shape. **246 tests passing, 2 ignored** — and one of those
+The engine is in good shape. **250 tests passing, 2 ignored** — and one of those
 two is a diagnostic tool rather than a test. Every RiMEA case the engine
 is capable of satisfying, satisfies.
 
@@ -120,30 +120,43 @@ without the other.
 
 Ranked, what is left:
 
-1. **Declare the validated envelope** as ρ ≤ 2 persons/m² and say so in the
-   compliance dossier. Close to free, honest, and it is where every figure the
-   product reports is actually computed. ADR 0007 option 3.
+1. **Scenario events.** `cf_schema::scenario::TimedEvent` carries `closeOpening`,
+   `openOpening`, `alarm` and `blockLink`, and the engine acts on none of them —
+   the authoring panel lists them under "Not simulated". *What if this exit is
+   blocked* is the question a fire-safety engineer actually asks, so this is the
+   highest-value thing the engine cannot currently answer.
 
-2. **Multi-floor navigation.** Stairs now slow people down (`Zone::
-   speed_multiplier` reaches the mesh), but `Sim` still holds one flat
+   Closing an opening needs more than dropping it from `Sim::exits`: the edge is
+   unconstrained in the triangulation, so agents would still walk through the
+   gap and off the mesh. It has to be sealed — put the edge back in
+   `tri.constraints`, rebuild adjacency and portals, add the segment to
+   `Sim::walls` — and every route through it re-planned. `replan_the_stuck` and
+   `reconsider_exits` already exist to absorb the aftermath.
+
+2. **Multi-floor navigation.** Stairs slow people down, but `Sim` holds one flat
    `NavMesh` with no floor identity, so an agent cannot traverse a
-   `VerticalLink` between two floors. `docs/06-validation.md` §3 "Vertical
-   circulation" needs this; RiMEA TC2 did not.
+   `VerticalLink`. `docs/06-validation.md` §3 needs this.
 
-3. **Zone-aware meshing.** A zone applies its speed multiplier to triangles
-   whose centroid it contains, so a zone smaller than the local triangles takes
-   none of them and raises `ZoneSpeedNotApplied`. Inserting zone boundary
-   vertices as Steiner points during triangulation would fix it. Note they must
-   *not* become constraints — a constraint is a wall in this codebase.
-
-4. **Flow fields** to replace per-agent A*. This matters more than it did:
+3. **Flow fields** to replace per-agent A*. Matters more than it did:
    `reconsider_exits` issues a path query per exit per reconsideration.
 
-5. **Floorplan import** — `services/` exists only as an unverified sketch on a
-   branch. Nothing has ever compiled or linted it.
+4. **Floorplan import** — `services/` is an unverified sketch on a branch.
 
-6. Multi-select and marquee; scenario events (a door closing mid-run) — the
-   schema has `events` and the engine ignores them.
+5. Multi-select and marquee.
+
+### A standing caveat: none of the UI has been driven
+
+No browser tool has been attached to any session that built the frontend. The
+scenario panel, the report's verification statement and the undo interleaving
+have been typechecked and built but **never clicked**. Six of this project's
+frontend bugs were found only by driving the real UI, so treat that as unproven
+rather than working.
+
+The mitigation so far is `engine/cf-wasm/tests/end_to_end.rs`, which calls
+exactly what JS calls — including the scenario path the editor now uses for
+every run. If that passes, what is left to break is the JS glue, not the engine.
+Anyone with a browser should open the app and exercise: draw a wall, edit a
+population, run, open the report.
 
 ### Parallel work parked on branches
 
