@@ -69,11 +69,11 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [ ] Determinism gate G2 in CI (x86-64 / aarch64 / wasm32)
 
 ### B3 — WASM host (W12–W17)
-- [ ] `cf-wasm` bindings + worker protocol
+- [x] `cf-wasm` bindings + worker protocol
 - [ ] SharedArrayBuffer double-buffered layout
 - [ ] `wasm-bindgen-rayon` thread pool
 - [ ] `simd128` force kernel + scalar fallback (bit-identical)
-- [ ] Single-threaded non-isolated fallback path
+- [x] Single-threaded non-isolated fallback path — the only path today; threading is B6
 - [ ] NavGraph cache in IndexedDB
 
 ### B4 — Components, modes, behaviour (W15–W22)
@@ -151,10 +151,10 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [ ] Routing graph editor
 - [ ] Flow constraints (one-way painting)
 - [ ] Access-tag matrix
-- [ ] Arrival curve editor with derivative plot
-- [ ] Population builder (distribution editors generated from schema)
-- [ ] Itinerary builder
-- [ ] Event timeline
+- [x] Arrival curve editor with derivative plot
+- [x] Population builder (distribution editors generated from schema)
+- [~] Itinerary builder — first step only (goal + entry); multi-leg needs per-agent goal chaining in `cf-sim`
+- [~] Event timeline — engine acts on `closeOpening` and `alarm`; no UI to author them yet
 - [ ] Scenario manager (duplicate, tag, compare)
 
 ### A4 — Deterministic import (W9–W14)
