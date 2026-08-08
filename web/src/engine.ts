@@ -413,6 +413,16 @@ export class Run {
     return this.inner.lostPersonSeconds();
   }
 
+  /**
+   * What happened during the run, in order.
+   *
+   * A dossier full of totals says how a venue performed but not what happened.
+   * A reviewer reconstructing an evacuation reads a sequence.
+   */
+  events(): RunEvent[] {
+    return this.inner.events() as RunEvent[];
+  }
+
   /** Highest density reached anywhere during the run, persons/m². */
   get peakDensity(): number {
     return this.inner.peakDensity();
@@ -485,4 +495,46 @@ export interface ComplianceFacts {
  */
 export function assessCompliance(facts: ComplianceFacts): PackFindings[] {
   return evaluateCompliance(JSON.stringify(facts)) as PackFindings[];
+}
+
+
+/** One entry in a run's timeline. */
+export interface RunEvent {
+  atS: number;
+  kind:
+    | 'firstDeparture'
+    | 'halfCleared'
+    | 'lastDeparture'
+    | 'densityThreshold'
+    | 'exitClosed'
+    | 'alarmSounded'
+    | 'agentsRecovered';
+  /** Persons rerouted, agents recovered, the density crossed — or null. */
+  detail: number | null;
+}
+
+/**
+ * A timeline entry as a sentence.
+ *
+ * Written here rather than in the report so the wording lives beside the shape
+ * it describes: a new event kind that nobody has written a sentence for fails
+ * to compile instead of rendering as a bare enum name in a filed document.
+ */
+export function describeEvent(e: RunEvent): string {
+  switch (e.kind) {
+    case 'firstDeparture':
+      return 'First occupant left the venue';
+    case 'halfCleared':
+      return 'Half of the occupants had left';
+    case 'lastDeparture':
+      return 'Venue cleared';
+    case 'densityThreshold':
+      return `Crowd density reached ${e.detail?.toFixed(1) ?? '?'} persons/m²`;
+    case 'exitClosed':
+      return `Exit ${(e.detail ?? 0) + 1} was closed`;
+    case 'alarmSounded':
+      return `Alarm sounded — ${e.detail ?? 0} occupants redirected to an exit`;
+    case 'agentsRecovered':
+      return `${e.detail ?? 0} occupant(s) recovered from outside the walkable area — treat this run with caution`;
+  }
 }

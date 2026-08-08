@@ -21,7 +21,14 @@
  */
 
 import { Fragment } from 'react';
-import type { CompileWarning, EgressStats, PackFindings, SimStats } from '../engine';
+import type {
+  CompileWarning,
+  EgressStats,
+  PackFindings,
+  RunEvent,
+  SimStats,
+} from '../engine';
+import { describeEvent } from '../engine';
 import { formatClock, occupantLoad } from '../state/store';
 import type { Thresholds } from '../state/store';
 import type { VenueDoc } from '../schema/venue';
@@ -43,6 +50,8 @@ export interface ReportData {
   hotspots: { x: number; y: number; lostPersonS: number; share: number }[] | null;
   /** Total person-seconds lost to congestion across the run. */
   lostPersonS: number | null;
+  /** What happened during the run, in order. */
+  timeline: RunEvent[] | null;
   venueName: string;
   document: VenueDoc | null;
   walkableArea: number;
@@ -605,6 +614,29 @@ export function Report(props: { data: ReportData; onClose: () => void }) {
                 all.
               </p>
             )}
+          </section>
+        )}
+
+        {d.timeline && d.timeline.length > 0 && (
+          <section>
+            <h2>What happened</h2>
+            <p className="muted">
+              Recorded as the run proceeded, not reconstructed afterwards — the two disagree in
+              exactly the cases that matter, such as a peak later exceeded or a warning whose
+              cause has since cleared.
+            </p>
+            <table className="spec">
+              <tbody>
+                {d.timeline.map((e, i) => (
+                  <tr key={`${e.atS}-${e.kind}-${i}`}>
+                    <th>{formatClock(e.atS)}</th>
+                    <td className={e.kind === 'agentsRecovered' ? 'caution' : undefined}>
+                      {describeEvent(e)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </section>
         )}
 

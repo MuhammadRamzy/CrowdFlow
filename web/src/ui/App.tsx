@@ -598,6 +598,7 @@ export function App() {
       egressCurve,
       exitUsage,
       compliance,
+      timeline: run ? run.events() : null,
       hotspots: run ? run.hotspots(5) : null,
       lostPersonS: run ? run.lostPersonSeconds : null,
       venueName: st.venueName,

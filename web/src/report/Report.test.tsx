@@ -21,6 +21,7 @@ function data(over: Partial<ReportData> = {}): ReportData {
     compliance: null,
     hotspots: null,
     lostPersonS: null,
+    timeline: null,
     venueName: 'Test hall',
     document: null,
     walkableArea: 240,
@@ -311,5 +312,40 @@ describe('where the crowd lost time', () => {
     // A table of places where nothing happened reads as a finding.
     render(<Report data={data({ hotspots: [], lostPersonS: 0 })} onClose={vi.fn()} />);
     expect(screen.queryByText(/where the crowd lost time/i)).toBeNull();
+  });
+})
+
+describe('the run timeline', () => {
+  const timeline = [
+    { atS: 0.2, kind: 'densityThreshold' as const, detail: 2.0 },
+    { atS: 1.7, kind: 'firstDeparture' as const, detail: null },
+    { atS: 20.5, kind: 'halfCleared' as const, detail: null },
+    { atS: 32.0, kind: 'lastDeparture' as const, detail: null },
+  ];
+
+  it('reads as a sequence a reviewer can follow', () => {
+    render(<Report data={data({ timeline })} onClose={vi.fn()} />);
+    expect(screen.getByText(/what happened/i)).toBeTruthy();
+    expect(screen.getByText(/First occupant left the venue/)).toBeTruthy();
+    expect(screen.getByText(/Crowd density reached 2.0 persons\/m²/)).toBeTruthy();
+    expect(screen.getByText('0:32')).toBeTruthy();
+  });
+
+  it('flags a physics leak rather than listing it like any other event', () => {
+    // Agents recovered from outside the mesh means the run is suspect. Shown
+    // in the same weight as "half cleared", a reader would skim past it.
+    render(
+      <Report
+        data={data({ timeline: [{ atS: 4.0, kind: 'agentsRecovered', detail: 3 }] })}
+        onClose={vi.fn()}
+      />,
+    );
+    const row = screen.getByText(/recovered from outside the walkable area/i);
+    expect(row.className).toContain('caution');
+  });
+
+  it('omits the section when nothing was recorded', () => {
+    render(<Report data={data({ timeline: [] })} onClose={vi.fn()} />);
+    expect(screen.queryByText(/what happened/i)).toBeNull();
   });
 })

@@ -37,6 +37,7 @@ pub mod building;
 pub mod calibration;
 pub mod congestion;
 pub mod density;
+pub mod events;
 pub mod fmath;
 pub mod locomotion;
 pub mod rng;

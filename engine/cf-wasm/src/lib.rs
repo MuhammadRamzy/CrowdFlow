@@ -642,6 +642,15 @@ impl Simulation {
         self.sim.exit_specific_flow()
     }
 
+    /// What happened during the run, in the order it happened.
+    ///
+    /// `cf-sim` carries no serde — it is why `cf-geom`'s is a feature — so the
+    /// log is described here rather than derived there.
+    pub fn events(&self) -> Result<JsValue, JsError> {
+        let out: Vec<EventView> = self.sim.events().iter().map(EventView::from).collect();
+        serde_wasm_bindgen::to_value(&out).map_err(|e| JsError::new(&e.to_string()))
+    }
+
     /// The places that cost the crowd the most time, worst first.
     ///
     /// Flat `[x, y, personSeconds, share, ...]`, `n` entries at most. Flat
@@ -1081,4 +1090,42 @@ pub struct PackFindings {
     /// Whether a qualified fire engineer has checked this pack. False, so far.
     pub reviewed: bool,
     pub findings: Vec<cf_compliance::Finding>,
+}
+
+/// One timeline entry, in the shape the dossier reads.
+///
+/// Flattened to a kind plus an optional detail rather than a tagged union,
+/// because the report renders a sentence per entry and a discriminated union
+/// would make it reconstruct the sentence from parts.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EventView {
+    at_s: f64,
+    kind: &'static str,
+    /// The number the entry is about — persons rerouted, agents recovered, the
+    /// exit that closed — or `None` where the entry has no number.
+    detail: Option<f64>,
+}
+
+impl From<&cf_sim::events::Event> for EventView {
+    fn from(e: &cf_sim::events::Event) -> Self {
+        use cf_sim::events::EventKind as K;
+        let (kind, detail) = match e.kind {
+            K::FirstDeparture => ("firstDeparture", None),
+            K::HalfCleared => ("halfCleared", None),
+            K::LastDeparture => ("lastDeparture", None),
+            // Back to persons/m² from the tenths the log stores to stay `Eq`.
+            K::DensityThreshold { tenths_per_m2 } => {
+                ("densityThreshold", Some(tenths_per_m2 as f64 / 10.0))
+            }
+            K::ExitClosed { exit } => ("exitClosed", Some(exit as f64)),
+            K::AlarmSounded { rerouted } => ("alarmSounded", Some(rerouted as f64)),
+            K::AgentsRecovered { count } => ("agentsRecovered", Some(count as f64)),
+        };
+        EventView {
+            at_s: e.at_s,
+            kind,
+            detail,
+        }
+    }
 }

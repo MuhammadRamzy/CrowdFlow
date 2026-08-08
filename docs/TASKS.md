@@ -90,7 +90,7 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [x] Density grid (disc-window, physically validated)
 - [ ] Velocity field, dwell map
 - [ ] Cohort trajectory sampling
-- [ ] Event log
+- [x] Event log
 - [x] Bottleneck detection + ranking (person-seconds lost; ranks, does not classify)
 - [x] Throughput per component/opening
 - [x] Egress metrics (50/90/99/100% cleared)

@@ -29,6 +29,7 @@
 
 use crate::congestion::{CongestionMap, Hotspot};
 use crate::density::DensityGrid;
+use crate::events::EventLog;
 use crate::locomotion::{self, LocomotionParams, LocomotionScratch};
 use crate::rng::{Rng, Stream};
 use crate::spatial::SpatialGrid;
@@ -172,6 +173,8 @@ pub struct Sim {
     tri_hint: Vec<usize>,
     /// Where the crowd lost time, over the whole run.
     congestion: CongestionMap,
+    /// What happened, and when.
+    log: EventLog,
     /// When each agent left, in the order they left.
     ///
     /// Already sorted, because time only goes forward — which is what makes a
@@ -219,6 +222,7 @@ impl Sim {
             stuck_ticks: Vec::new(),
             tri_hint: Vec::new(),
             congestion: CongestionMap::new(bounds, 2.0),
+            log: EventLog::default(),
             exit_times: Vec::new(),
             exit_usage: Vec::new(),
             exit_origin: Vec::new(),
@@ -264,6 +268,7 @@ impl Sim {
             stuck_ticks: Vec::new(),
             tri_hint: Vec::new(),
             congestion: CongestionMap::new(bounds, 2.0),
+            log: EventLog::default(),
             exit_times: Vec::new(),
             exit_usage: vec![0; n_exits],
             exit_origin: (0..n_exits).collect(),
@@ -332,6 +337,7 @@ impl Sim {
 
         self.walls.push(span.segment());
         self.exits.remove(index);
+        self.log.on_exit_closed(self.world.time, index);
         // Keep the tally keyed to where the doorway started, or closing one
         // would shift every later door's throughput onto its neighbour.
         if index < self.exit_origin.len() {
@@ -389,6 +395,7 @@ impl Sim {
             .collect();
 
         let mut moved = 0;
+        let started = self.world.time;
         for (i, from, r) in targets {
             if let Some(g) = self.nearest_exit(from) {
                 self.routes[i] = self.plan(from, g, r, true);
@@ -404,6 +411,7 @@ impl Sim {
             // seconds before looking at which door is busiest.
             self.world.patience_left[i] = 0.0;
         }
+        self.log.on_alarm(started, moved);
         moved
     }
 
@@ -457,6 +465,11 @@ impl Sim {
         if self.world.state[i] == AgentState::Dwelling {
             self.world.state[i] = AgentState::Evacuating;
         }
+    }
+
+    /// What happened during the run, in the order it happened.
+    pub fn events(&self) -> &[crate::events::Event] {
+        self.log.entries()
     }
 
     /// The places that cost the crowd the most time, worst first.
@@ -832,10 +845,18 @@ impl Sim {
         //    the mesh is put back and counted — a non-zero count here means the
         //    physics is leaking and should be investigated, not tuned around.
         let escaped = self.recover_escaped();
+        self.log.on_recovered(self.world.time, escaped);
 
         locomotion::update_blocked_state(&mut self.world, self.params.blocked_speed);
         self.replan_the_stuck();
         self.reconsider_exits(dt);
+
+        // Milestones, once the tick's state is settled.
+        let peak = self.density.peak().iter().copied().fold(0.0f32, f32::max) as f64;
+        self.log.on_density(self.world.time, peak);
+        if self.world.active_count() == 0 && self.world.exited_count() > 0 {
+            self.log.on_empty(self.world.time);
+        }
 
         // Derive time from the tick count rather than accumulating. Repeated
         // `time += dt` drifts — `0.05f32` is not exactly 0.05, and a 90-minute
@@ -1238,9 +1259,15 @@ impl Sim {
 
         // Ascending order, so the exit log is reproducible.
         let now = self.world.time;
+        // Everyone who was ever going to leave: those still inside plus those
+        // already out. Agents that were never placed cannot clear, and counting
+        // them would move the halfway mark somewhere nobody crossed.
+        let expected = self.world.active_count() + self.world.exited_count();
         for (id, exit) in leaving {
             self.world.despawn(id);
             self.exit_times.push(now);
+            self.log
+                .on_departure(now, self.exit_times.len() as u32, expected);
             if let Some(&origin) = self.exit_origin.get(exit) {
                 if let Some(slot) = self.exit_usage.get_mut(origin) {
                     *slot += 1;
