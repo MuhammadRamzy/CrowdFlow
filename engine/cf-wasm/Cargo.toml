@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 cf-compile.workspace = true
+cf-compliance.workspace = true
 cf-geom = { workspace = true, features = ["serde"] }
 cf-navmesh.workspace = true
 cf-schema.workspace = true

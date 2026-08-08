@@ -69,6 +69,7 @@ name = "cf-wasm"
 version = "0.1.0"
 dependencies = [
  "cf-compile",
+ "cf-compliance",
  "cf-geom",
  "cf-navmesh",
  "cf-schema",

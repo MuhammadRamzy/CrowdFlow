@@ -19,7 +19,12 @@
  * engine has not produced a value, the UI shows nothing rather than a guess.
  */
 
-import init, { CompiledVenue, Simulation, engine_version } from './engine/cf_wasm.js';
+import init, {
+  CompiledVenue,
+  Simulation,
+  engine_version,
+  evaluateCompliance,
+} from './engine/cf_wasm.js';
 
 /** A compiler diagnostic, for the validation panel. */
 export interface CompileWarning {
@@ -394,4 +399,63 @@ export class Run {
   free(): void {
     this.inner.free();
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// Compliance
+// ---------------------------------------------------------------------------
+
+/** One rule's verdict, with the arithmetic that produced it. */
+export interface ComplianceFinding {
+  ruleId: string;
+  clause: string;
+  title: string;
+  status: 'pass' | 'fail' | 'notAssessed';
+  measured: number | null;
+  limit: number | null;
+  /** The calculation, in the form the standard states it. */
+  working: string;
+  note: string;
+}
+
+/** The findings from one standard. */
+export interface PackFindings {
+  id: string;
+  name: string;
+  /** Document and edition, so a finding can be traced to a source. */
+  source: string;
+  /**
+   * Whether a qualified fire engineer has checked this pack.
+   *
+   * **False on every pack shipped so far.** The dossier says so, because a
+   * pack that looks authoritative without that review is worse than one that
+   * is obviously provisional — the first gets relied on.
+   */
+  reviewed: boolean;
+  findings: ComplianceFinding[];
+}
+
+/** What a rule pack may ask about a venue. */
+export interface ComplianceFacts {
+  walkableAreaM2: number;
+  occupancy: number;
+  exitCount: number;
+  totalExitWidthM: number;
+  narrowestExitM: number;
+  /** Null when the venue has not been simulated — not zero. */
+  egressTimeS: number | null;
+  peakDensity: number | null;
+  travelDistanceM: number | null;
+}
+
+/**
+ * Judge a venue against every embedded rule pack.
+ *
+ * The packs are compiled into the wasm, so this works with no network — a
+ * venue is often assessed on site, and a compliance document that needs a
+ * connection to say whether a hall is over capacity is not much of a tool.
+ */
+export function assessCompliance(facts: ComplianceFacts): PackFindings[] {
+  return evaluateCompliance(JSON.stringify(facts)) as PackFindings[];
 }

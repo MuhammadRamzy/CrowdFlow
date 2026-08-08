@@ -648,3 +648,83 @@ fn asking_about_a_floor_that_is_not_there_is_safe() {
     assert!(b.states_on_floor(7).is_empty());
     assert_eq!(b.route_to_stairs(7), 0);
 }
+
+// ---------------------------------------------------------------------------
+// Compliance, through the binding
+// ---------------------------------------------------------------------------
+
+/// The embedded packs parse and evaluate.
+///
+/// Asserted against `assess` rather than the `evaluateCompliance` binding, for
+/// the same reason as the malformed-document tests above: `JsValue` cannot be
+/// built off-wasm. The binding does nothing but marshal this result.
+///
+/// The packs are `include_str!`d rather than fetched, so a broken pack is a
+/// build failure here rather than a blank compliance section in a browser at
+/// the moment somebody needs it.
+#[test]
+fn the_embedded_rule_packs_evaluate() {
+    // A 240 m² hall, 300 people, two 1.6 m doors — the same figures the
+    // hand-worked fixtures in cf-compliance use, so the two agree by
+    // construction rather than by coincidence.
+    let facts = cf_compliance::Facts {
+        walkable_area_m2: 240.0,
+        occupancy: 300,
+        exit_count: 2,
+        total_exit_width_m: 3.2,
+        narrowest_exit_m: 1.6,
+        egress_time_s: Some(120.0),
+        peak_density: Some(1.8),
+        travel_distance_m: Some(22.0),
+    };
+    let packs = cf_wasm::assess(&facts).expect("packs evaluate");
+
+    assert_eq!(packs.len(), 2, "both packs should be embedded");
+    for p in &packs {
+        assert!(!p.findings.is_empty(), "{} produced no findings", p.id);
+        assert!(!p.source.is_empty(), "{} does not cite its source", p.id);
+        // Every pack must own up to not having been reviewed.
+        assert!(
+            !p.reviewed,
+            "{} claims a review that has not happened",
+            p.id
+        );
+    }
+
+    // This hall complies, so nothing should fail — if it does, either the
+    // fixture or a threshold has drifted and both matter.
+    let failures: Vec<&str> = packs
+        .iter()
+        .flat_map(|p| &p.findings)
+        .filter(|f| f.status == cf_compliance::Status::Fail)
+        .map(|f| f.rule_id.as_str())
+        .collect();
+    assert!(failures.is_empty(), "unexpected failures: {failures:?}");
+}
+
+#[test]
+fn an_unsimulated_venue_is_not_reported_as_compliant() {
+    // No run means no egress time and no density. Those rules must come back
+    // NotAssessed — reporting them as passes turns "we did not check" into "we
+    // checked and it was fine", on a document an authority may act on.
+    let facts = cf_compliance::Facts {
+        walkable_area_m2: 240.0,
+        occupancy: 300,
+        exit_count: 2,
+        total_exit_width_m: 3.2,
+        narrowest_exit_m: 1.6,
+        egress_time_s: None,
+        peak_density: None,
+        travel_distance_m: None,
+    };
+    let packs = cf_wasm::assess(&facts).expect("packs evaluate");
+    let unassessed = packs
+        .iter()
+        .flat_map(|p| &p.findings)
+        .filter(|f| f.status == cf_compliance::Status::NotAssessed)
+        .count();
+    assert!(
+        unassessed >= 3,
+        "run-dependent rules were judged without a run"
+    );
+}

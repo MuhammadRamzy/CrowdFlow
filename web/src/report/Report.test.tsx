@@ -9,7 +9,7 @@
  * How it prints is still a person's job.
  */
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Report, type ReportData } from './Report';
 
@@ -18,6 +18,7 @@ function data(over: Partial<ReportData> = {}): ReportData {
     egressStats: null,
     egressCurve: null,
     exitUsage: null,
+    compliance: null,
     venueName: 'Test hall',
     document: null,
     walkableArea: 240,
@@ -201,5 +202,77 @@ describe('egress shape and exit usage', () => {
     // An unused exit may simply be far from the crowd. Saying so is the
     // difference between a finding and an accusation.
     expect(screen.getByText(/not necessarily faulty/i)).toBeTruthy();
+  });
+})
+
+describe('rule packs in the dossier', () => {
+  const pack = (over = {}) => ({
+    id: 'nfpa101',
+    name: 'NFPA 101 — Life Safety Code',
+    source: 'NFPA 101 (2024), assembly occupancy',
+    reviewed: false,
+    findings: [
+      {
+        ruleId: 'nfpa101.occupant-load',
+        clause: '7.3.1.2',
+        title: 'Occupant load must not exceed what the floor area allows',
+        status: 'pass' as const,
+        measured: 300,
+        limit: 369,
+        working: '240.00 m² ÷ 0.65 m²/person, rounded down = 369',
+        note: 'Concentrated assembly use.',
+      },
+    ],
+    ...over,
+  });
+
+  it('cites the standard and the clause', () => {
+    render(<Report data={data({ compliance: [pack()] })} onClose={vi.fn()} />);
+    expect(screen.getByText(/NFPA 101 — Life Safety Code/)).toBeTruthy();
+    expect(screen.getByText('7.3.1.2')).toBeTruthy();
+  });
+
+  it('shows the arithmetic behind every verdict', () => {
+    // A compliance figure a reader cannot reproduce is one they must take on
+    // trust, and these documents do not get taken on trust.
+    render(<Report data={data({ compliance: [pack()] })} onClose={vi.fn()} />);
+    expect(screen.getByText(/240.00 m² ÷ 0.65 m²\/person/)).toBeTruthy();
+  });
+
+  it('says plainly that the rules are unreviewed', () => {
+    render(<Report data={data({ compliance: [pack()] })} onClose={vi.fn()} />);
+    expect(
+      screen.getByText(/not been reviewed by a qualified fire engineer/i),
+    ).toBeTruthy();
+  });
+
+  it('drops the warning once a pack has been reviewed', () => {
+    render(<Report data={data({ compliance: [pack({ reviewed: true })] })} onClose={vi.fn()} />);
+    expect(screen.queryByText(/not been reviewed by a qualified/i)).toBeNull();
+  });
+
+  it('shows an unassessed rule as n/a, never as a pass', () => {
+    // Reporting an unchecked rule as compliant turns "we did not check" into
+    // "we checked and it was fine", on a document an authority may act on.
+    const p = pack({
+      findings: [
+        {
+          ruleId: 'greenGuide.rate-of-passage',
+          clause: '9.11',
+          title: 'Achieved evacuation time',
+          status: 'notAssessed' as const,
+          measured: null,
+          limit: null,
+          working: 'not assessed — egress time is not known for this venue',
+          note: '',
+        },
+      ],
+    });
+    render(<Report data={data({ compliance: [p] })} onClose={vi.fn()} />);
+    // Scoped to the pack's own table — the dossier's other findings say "pass"
+    // legitimately, and a bare query would match those.
+    const section = screen.getByText(/NFPA 101 — Life Safety Code/).closest('section')!;
+    expect(within(section).getByText('n/a')).toBeTruthy();
+    expect(within(section).queryByText(/^pass$/i)).toBeNull();
   });
 })

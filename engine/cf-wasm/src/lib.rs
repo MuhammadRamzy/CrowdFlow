@@ -990,3 +990,72 @@ fn stair_seconds(speed_multiplier: f64) -> f64 {
     let v = (LEVEL_SPEED * speed_multiplier.clamp(0.05, 2.0)).max(0.05);
     FLIGHT_LENGTH_M / v
 }
+
+// ---------------------------------------------------------------------------
+// Compliance
+// ---------------------------------------------------------------------------
+
+/// The rule packs, compiled in.
+///
+/// Embedded rather than fetched so the dossier can be produced with no network
+/// — a venue is often assessed on site, and a compliance document that needs a
+/// connection to say whether a hall is over capacity is not much of a tool.
+const PACKS: &[(&str, &str)] = &[
+    (
+        "nfpa101",
+        include_str!("../../cf-compliance/packs/nfpa101.json"),
+    ),
+    (
+        "greenGuide",
+        include_str!("../../cf-compliance/packs/green-guide.json"),
+    ),
+];
+
+/// Evaluate a venue against every rule pack.
+///
+/// `facts_json` is a `cf_compliance::Facts`. Findings come back in pack order
+/// and in clause order within a pack, because a reviewer reads a standard the
+/// way the standard is written.
+///
+/// The packs are **not reviewed by a fire engineer** — each says so in its own
+/// `reviewedByFireEngineer` field, and the dossier prints it. A pack that looks
+/// authoritative without that review is worse than one that is obviously
+/// provisional.
+#[wasm_bindgen(js_name = evaluateCompliance)]
+pub fn evaluate_compliance(facts_json: &str) -> Result<JsValue, JsError> {
+    let facts: cf_compliance::Facts = serde_json::from_str(facts_json)
+        .map_err(|e| JsError::new(&format!("facts are not valid: {e}")))?;
+
+    let out = assess(&facts).map_err(|e| JsError::new(&e))?;
+    serde_wasm_bindgen::to_value(&out).map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Evaluate every embedded pack. The whole of `evaluateCompliance` except the
+/// JS marshalling, so it can be tested off-wasm — `JsValue` cannot be built
+/// outside a browser, and a binding whose only test needs one has none.
+pub fn assess(facts: &cf_compliance::Facts) -> Result<Vec<PackFindings>, String> {
+    let mut out = Vec::with_capacity(PACKS.len());
+    for (id, text) in PACKS {
+        let pack = cf_compliance::RulePack::from_json(text)
+            .map_err(|e| format!("rule pack {id} is broken: {e}"))?;
+        out.push(PackFindings {
+            findings: pack.evaluate(facts),
+            id: pack.id,
+            name: pack.name,
+            source: pack.source,
+            reviewed: pack.reviewed_by_fire_engineer,
+        });
+    }
+    Ok(out)
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackFindings {
+    pub id: String,
+    pub name: String,
+    pub source: String,
+    /// Whether a qualified fire engineer has checked this pack. False, so far.
+    pub reviewed: bool,
+    pub findings: Vec<cf_compliance::Finding>,
+}

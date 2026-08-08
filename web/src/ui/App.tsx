@@ -22,7 +22,14 @@ import { SessionHistory, History, RemoveOpening, RemoveWall, RemoveZone } from '
 import { defaultScenario } from '../doc/scenario';
 import type { ScenarioDoc } from '../schema/scenario';
 import type { VenueDoc } from '../schema/venue';
-import { engineVersion, loadEngine, Run, summariseEgress, Venue } from '../engine';
+import {
+  assessCompliance,
+  engineVersion,
+  loadEngine,
+  Run,
+  summariseEgress,
+  Venue,
+} from '../engine';
 import { useApp } from '../state/store';
 import { Inspector } from './Inspector';
 import { StatusBar } from './StatusBar';
@@ -567,10 +574,30 @@ export function App() {
         }))
       : null;
 
+    // The rule packs judge the venue from the same figures the rest of the
+    // dossier quotes, so a reader cannot find the panel and the findings
+    // disagreeing about the same hall.
+    const doorWidths = (historyRef.current?.document?.floors ?? [])
+      .flatMap((f) => f.openings ?? [])
+      .map((o) => o.widthM);
+    const compliance = assessCompliance({
+      walkableAreaM2: st.walkableArea,
+      occupancy: st.peakOccupancy,
+      exitCount: doorWidths.length,
+      totalExitWidthM: doorWidths.reduce((a, w) => a + w, 0),
+      narrowestExitM: doorWidths.length ? Math.min(...doorWidths) : 0,
+      // Null, not zero: a venue nobody has run has no egress time, and zero
+      // would be judged as an instantaneous evacuation.
+      egressTimeS: st.egressTime,
+      peakDensity: st.peakDensity > 0 ? st.peakDensity : null,
+      travelDistanceM: null,
+    });
+
     setReport({
       egressStats,
       egressCurve,
       exitUsage,
+      compliance,
       venueName: st.venueName,
       document: historyRef.current?.document ?? null,
       walkableArea: st.walkableArea,

@@ -21,7 +21,7 @@
  */
 
 import { Fragment } from 'react';
-import type { CompileWarning, EgressStats, SimStats } from '../engine';
+import type { CompileWarning, EgressStats, PackFindings, SimStats } from '../engine';
 import { formatClock, occupantLoad } from '../state/store';
 import type { Thresholds } from '../state/store';
 import type { VenueDoc } from '../schema/venue';
@@ -37,6 +37,8 @@ export interface ReportData {
   egressCurve: (number | null)[] | null;
   /** Persons who left by each doorway, and the flow each achieved. */
   exitUsage: { count: number; specificFlow: number }[] | null;
+  /** Verdicts from the rule packs, or null before a venue is loaded. */
+  compliance: PackFindings[] | null;
   venueName: string;
   document: VenueDoc | null;
   walkableArea: number;
@@ -601,6 +603,54 @@ export function Report(props: { data: ReportData; onClose: () => void }) {
             )}
           </section>
         )}
+
+        {d.compliance?.map((pack) => (
+          <section key={pack.id}>
+            <h2>{pack.name}</h2>
+            <p className="muted">
+              {pack.source}.
+              {!pack.reviewed && (
+                <>
+                  {' '}
+                  <strong className="breach">
+                    These rules have not been reviewed by a qualified fire engineer.
+                  </strong>{' '}
+                  They are stated with their clause references and arithmetic so that they can
+                  be — but until they have been, treat every verdict here as provisional.
+                </>
+              )}
+            </p>
+            <table className="findings">
+              <thead>
+                <tr>
+                  <th>Result</th>
+                  <th>Clause</th>
+                  <th>Requirement</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pack.findings.map((f) => (
+                  <Fragment key={f.ruleId}>
+                    <tr className={f.status === 'fail' ? 'is-fail' : undefined}>
+                      <td className="result">
+                        {f.status === 'notAssessed' ? 'n/a' : f.status}
+                      </td>
+                      <td className="finding-clause">{f.clause}</td>
+                      <td>{f.title}</td>
+                    </tr>
+                    <tr className={`working${f.status === 'fail' ? ' is-fail' : ''}`}>
+                      <td />
+                      <td colSpan={2}>
+                        {f.working}
+                        {f.status === 'fail' && f.note ? ` — ${f.note}` : ''}
+                      </td>
+                    </tr>
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        ))}
 
         <footer className="statement">
           <h3>Verification statement</h3>
