@@ -13,7 +13,7 @@ end, the model meets its headline benchmark (82.1 p/m/min through a 1 m door
 against the Green Guide's 82), and the whole RiMEA suite runs. One calibration
 gap remains; see "Next up".
 **Last updated:** 2026-08-06 by Ramzy's session
-**Tree status:** green — 280 Rust, 53 web and 38 Python tests passing, 4 ignored
+**Tree status:** green — 295 Rust, 53 web and 38 Python tests passing, 4 ignored
 (two are measurement tools rather than assertions: the repulsion sweep and the
 scale benchmark), and one of those two is a
 diagnostic tool rather than a test. clippy clean, wasm32 builds, web typecheck
@@ -60,7 +60,7 @@ The frontend is real and drives the real engine — nothing on screen is mocked.
 
 ### Next up — pick from the top
 
-The engine is in good shape. **280 Rust, 53 web, 38 Python tests; 4 ignored** — and one of those
+The engine is in good shape. **295 Rust, 53 web, 38 Python tests; 4 ignored** — and one of those
 two is a diagnostic tool rather than a test. Every RiMEA case the engine
 is capable of satisfying, satisfies.
 
@@ -184,6 +184,25 @@ Three traps are recorded in `services/README.md` and worth repeating:
 - **A PDF's units are page points, not drawing scale.** At 1:100 a metre of
   wall is 0.72 pt, so trusting the file gives a building 100x too small.
   Two-point calibration is the normal route for PDF, not a fallback.
+
+### The rule packs have not been reviewed by a fire engineer
+
+`engine/cf-compliance` evaluates NFPA 101 and Green Guide rules from JSON packs
+against hand-worked fixtures. Every pack declares
+`reviewedByFireEngineer: false`, and a test asserts it — because
+`docs/06-validation.md` requires that review and none has happened.
+
+The packs are written to be read by someone who knows the standards and not
+this codebase: clause references, thresholds, units, and a note per rule saying
+what a failure means. That is the point of them being data. **Getting them in
+front of a fire engineer is the single highest-value thing anyone can do for
+this project's credibility**, and it needs a person, not a session.
+
+Known simplifications already noted in the packs themselves: exit count does
+not yet vary with occupancy (NFPA 7.4.1.1 requires three above 500 and four
+above 1000); egress width does not distinguish stairs (7.6 mm/person) from
+level components (5 mm/person); occupancy factor is fixed at concentrated
+assembly rather than chosen per zone.
 
 ### A standing caveat: none of the UI has been driven
 

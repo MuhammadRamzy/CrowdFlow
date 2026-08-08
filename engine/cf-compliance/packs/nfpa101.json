@@ -1,0 +1,53 @@
+{
+  "id": "nfpa101",
+  "name": "NFPA 101 — Life Safety Code",
+  "source": "NFPA 101 (2024), assembly occupancy without fixed seating",
+  "reviewedByFireEngineer": false,
+  "rules": [
+    {
+      "id": "nfpa101.occupant-load",
+      "clause": "7.3.1.2",
+      "title": "Occupant load must not exceed the floor area allows",
+      "subject": "occupantLoad",
+      "compare": "atMost",
+      "limit": { "kind": "areaPerPerson", "m2PerPerson": 0.65 },
+      "note": "Concentrated assembly use without fixed seating. A different use has a different factor; this pack does not choose the use for you."
+    },
+    {
+      "id": "nfpa101.two-exits",
+      "clause": "7.4.1.1",
+      "title": "At least two separate means of egress",
+      "subject": "exitCount",
+      "compare": "atLeast",
+      "limit": { "kind": "fixed", "value": 2 },
+      "note": "One exit is one blocked exit away from none. Occupancies above 500 require three and above 1000 require four; this pack does not yet vary the count with occupancy."
+    },
+    {
+      "id": "nfpa101.egress-width",
+      "clause": "7.3.3.1",
+      "title": "Egress width by the capacity method",
+      "subject": "exitWidth",
+      "compare": "atLeast",
+      "limit": { "kind": "widthPerPerson", "mPerPerson": 0.005 },
+      "note": "5 mm per person for level egress components. Stairs require 7.6 mm per person, which this rule does not distinguish."
+    },
+    {
+      "id": "nfpa101.min-door-width",
+      "clause": "7.2.1.2.3.2",
+      "title": "Minimum clear width of a door in a means of egress",
+      "subject": "narrowestExit",
+      "compare": "atLeast",
+      "limit": { "kind": "fixed", "value": 0.815 },
+      "note": "32 in clear width. A door narrower than this is not a means of egress however many of them there are."
+    },
+    {
+      "id": "nfpa101.travel-distance",
+      "clause": "12.2.6",
+      "title": "Travel distance to an exit",
+      "subject": "travelDistance",
+      "compare": "atMost",
+      "limit": { "kind": "fixed", "value": 61.0 },
+      "note": "200 ft for a sprinklered assembly occupancy. An unsprinklered building is held to 45 m."
+    }
+  ]
+}

@@ -19,6 +19,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cf-compliance"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "cf-geom"
 version = "0.1.0"
 dependencies = [

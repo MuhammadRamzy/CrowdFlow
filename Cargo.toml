@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["engine/cf-compile", "engine/cf-geom", "engine/cf-navmesh", "engine/cf-schema", "engine/cf-sim", "engine/cf-wasm"]
+members = ["engine/cf-compile", "engine/cf-compliance", "engine/cf-geom", "engine/cf-navmesh", "engine/cf-schema", "engine/cf-sim", "engine/cf-wasm"]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,6 +14,7 @@ cf-geom = { path = "engine/cf-geom", default-features = false }
 cf-navmesh = { path = "engine/cf-navmesh" }
 cf-schema = { path = "engine/cf-schema" }
 cf-compile = { path = "engine/cf-compile" }
+cf-compliance = { path = "engine/cf-compliance" }
 cf-sim = { path = "engine/cf-sim" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

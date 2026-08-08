@@ -94,9 +94,9 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [ ] Bottleneck detection + ranking
 - [x] Throughput per component/opening
 - [x] Egress metrics (50/90/99/100% cleared)
-- [ ] `cf-compliance` rule evaluator + data-driven rule format
-- [ ] NFPA 101 rule pack + hand-worked fixtures
-- [ ] Green Guide rule pack + hand-worked fixtures
+- [x] `cf-compliance` rule evaluator + data-driven rule format
+- [x] NFPA 101 rule pack + hand-worked fixtures (**unreviewed** — see below)
+- [x] Green Guide rule pack + hand-worked fixtures (**unreviewed** — see below)
 - [ ] NFPA 130, NBC India rule packs
 - [ ] **External review of every rule by someone with fire-engineering knowledge**
 

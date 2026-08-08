@@ -1,0 +1,16 @@
+[package]
+name = "cf-compliance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# Deliberately no cf-sim and no cf-compile. A rule evaluates *facts* — an area,
+# a width, a time — not a simulation. Keeping the dependency out means a rule
+# pack can be checked against hand-worked numbers with no engine in the picture,
+# which is what makes it reviewable by a fire engineer rather than a programmer.
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

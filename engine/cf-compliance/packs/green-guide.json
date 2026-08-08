@@ -1,0 +1,35 @@
+{
+  "id": "greenGuide",
+  "name": "Green Guide — Guide to Safety at Sports Grounds",
+  "source": "Guide to Safety at Sports Grounds (6th edition)",
+  "reviewedByFireEngineer": false,
+  "rules": [
+    {
+      "id": "greenGuide.eight-minute",
+      "clause": "9.10",
+      "title": "Exits must pass the crowd within the emergency evacuation time",
+      "subject": "exitWidth",
+      "compare": "atLeast",
+      "limit": { "kind": "flowRate", "personsPerMPerMin": 82.0, "withinS": 480.0 },
+      "note": "82 persons per metre per minute on the level, over an eight-minute evacuation. A ground whose exits cannot pass its crowd in that time is over capacity however large it is."
+    },
+    {
+      "id": "greenGuide.rate-of-passage",
+      "clause": "9.11",
+      "title": "Achieved evacuation time",
+      "subject": "egressTime",
+      "compare": "atMost",
+      "limit": { "kind": "fixed", "value": 480.0 },
+      "note": "Eight minutes. Simulated rather than calculated — read it alongside the hydraulic figure above, not instead of it."
+    },
+    {
+      "id": "greenGuide.crush-density",
+      "clause": "10.4",
+      "title": "Crowd density must stay below the crush threshold",
+      "subject": "peakDensity",
+      "compare": "atMost",
+      "limit": { "kind": "fixed", "value": 6.0 },
+      "note": "Above roughly 6 persons/m² forward movement ceases and crush injuries become possible. Note the engine's own validated envelope is 2 persons/m² (ADR 0007), so a figure near this threshold is outside what the model has been shown to reproduce."
+    }
+  ]
+}
