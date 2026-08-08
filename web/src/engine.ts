@@ -386,6 +386,33 @@ export class Run {
     return Array.from(this.inner.exitSpecificFlow());
   }
 
+  /**
+   * The places that cost the crowd the most time, worst first.
+   *
+   * Person-seconds lost, binned at 2 m. This ranks where to look; it does not
+   * decide what counts as a bottleneck. Where the line falls between "busy"
+   * and "obstructed" is a judgement for a fire engineer looking at a specific
+   * venue, not a constant in a simulator.
+   */
+  hotspots(n = 5): { x: number; y: number; lostPersonS: number; share: number }[] {
+    const flat = Array.from(this.inner.hotspots(n));
+    const out = [];
+    for (let i = 0; i + 3 < flat.length; i += 4) {
+      out.push({
+        x: flat[i]!,
+        y: flat[i + 1]!,
+        lostPersonS: flat[i + 2]!,
+        share: flat[i + 3]!,
+      });
+    }
+    return out;
+  }
+
+  /** Total person-seconds the crowd lost to congestion. */
+  get lostPersonSeconds(): number {
+    return this.inner.lostPersonSeconds();
+  }
+
   /** Highest density reached anywhere during the run, persons/m². */
   get peakDensity(): number {
     return this.inner.peakDensity();

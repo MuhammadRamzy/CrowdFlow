@@ -27,6 +27,7 @@
 //! 100k agents is feasible at all. Per-agent paths are fine at M1 scale and
 //! let the locomotion model be exercised against real geometry now.
 
+use crate::congestion::{CongestionMap, Hotspot};
 use crate::density::DensityGrid;
 use crate::locomotion::{self, LocomotionParams, LocomotionScratch};
 use crate::rng::{Rng, Stream};
@@ -169,6 +170,8 @@ pub struct Sim {
     /// than a scan of the whole mesh. Only maintained when the mesh has
     /// non-uniform walking speeds.
     tri_hint: Vec<usize>,
+    /// Where the crowd lost time, over the whole run.
+    congestion: CongestionMap,
     /// When each agent left, in the order they left.
     ///
     /// Already sorted, because time only goes forward — which is what makes a
@@ -215,6 +218,7 @@ impl Sim {
             routes: Vec::new(),
             stuck_ticks: Vec::new(),
             tri_hint: Vec::new(),
+            congestion: CongestionMap::new(bounds, 2.0),
             exit_times: Vec::new(),
             exit_usage: Vec::new(),
             exit_origin: Vec::new(),
@@ -259,6 +263,7 @@ impl Sim {
             routes: Vec::new(),
             stuck_ticks: Vec::new(),
             tri_hint: Vec::new(),
+            congestion: CongestionMap::new(bounds, 2.0),
             exit_times: Vec::new(),
             exit_usage: vec![0; n_exits],
             exit_origin: (0..n_exits).collect(),
@@ -452,6 +457,21 @@ impl Sim {
         if self.world.state[i] == AgentState::Dwelling {
             self.world.state[i] = AgentState::Evacuating;
         }
+    }
+
+    /// The places that cost the crowd the most time, worst first.
+    ///
+    /// Person-seconds lost, binned at 2 m. This ranks where to look and
+    /// deliberately does not decide what counts as a bottleneck — where the
+    /// line falls between "busy" and "obstructed" is a judgement for a fire
+    /// engineer looking at a specific venue, not a constant in a simulator.
+    pub fn hotspots(&self, n: usize) -> Vec<Hotspot> {
+        self.congestion.hotspots(n)
+    }
+
+    /// Total person-seconds the crowd lost to congestion.
+    pub fn lost_person_s(&self) -> f64 {
+        self.congestion.total_lost_person_s()
     }
 
     /// The time by which `fraction` of everyone who has left had left.
@@ -791,6 +811,12 @@ impl Sim {
         // been applied. Folding corrections into velocity as they happen injects
         // energy — see `derive_velocity_from_positions`.
         locomotion::derive_velocity_from_positions(&mut self.world, &self.scratch, dt);
+
+        // Time lost, measured once velocities are final for the tick.
+        self.congestion.accumulate(&self.world, dt as f64);
+
+        // Time lost, measured once velocities are final for the tick.
+        self.congestion.accumulate(&self.world, dt as f64);
 
         // 7. Let anyone who crossed a doorway this tick leave.
         //

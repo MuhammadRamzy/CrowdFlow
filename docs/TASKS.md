@@ -91,7 +91,7 @@ Legend: `[ ]` todo · `[~]` in progress (put your name) · `[x]` done
 - [ ] Velocity field, dwell map
 - [ ] Cohort trajectory sampling
 - [ ] Event log
-- [ ] Bottleneck detection + ranking
+- [x] Bottleneck detection + ranking (person-seconds lost; ranks, does not classify)
 - [x] Throughput per component/opening
 - [x] Egress metrics (50/90/99/100% cleared)
 - [x] `cf-compliance` rule evaluator + data-driven rule format

@@ -39,6 +39,10 @@ export interface ReportData {
   exitUsage: { count: number; specificFlow: number }[] | null;
   /** Verdicts from the rule packs, or null before a venue is loaded. */
   compliance: PackFindings[] | null;
+  /** Where the crowd lost the most time, worst first. */
+  hotspots: { x: number; y: number; lostPersonS: number; share: number }[] | null;
+  /** Total person-seconds lost to congestion across the run. */
+  lostPersonS: number | null;
   venueName: string;
   document: VenueDoc | null;
   walkableArea: number;
@@ -601,6 +605,50 @@ export function Report(props: { data: ReportData; onClose: () => void }) {
                 all.
               </p>
             )}
+          </section>
+        )}
+
+        {d.hotspots && d.hotspots.length > 0 && (
+          <section>
+            <h2>Where the crowd lost time</h2>
+            <p className="muted">
+              Person-seconds lost: for every occupant, every moment they did not make the
+              progress they were trying to make. A packed foyer that keeps moving is not a
+              bottleneck; a half-empty corridor where everyone shuffles is, which is why this is
+              measured as delay rather than as density.
+              {d.lostPersonS !== null && (
+                <>
+                  {' '}The venue cost its occupants {(d.lostPersonS / 60).toFixed(0)} person-minutes
+                  in total.
+                </>
+              )}
+            </p>
+            <table className="findings">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Location</th>
+                  <th>Time lost</th>
+                  <th>Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                {d.hotspots.map((h, i) => (
+                  <tr key={`${h.x},${h.y}`}>
+                    <td className="finding-clause">{i + 1}</td>
+                    <td className="mono">
+                      ({h.x.toFixed(1)}, {h.y.toFixed(1)}) m
+                    </td>
+                    <td className="mono">{h.lostPersonS.toFixed(0)} person-s</td>
+                    <td className="mono">{(h.share * 100).toFixed(0)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="muted">
+              These are ranked, not classified. Where the line falls between busy and obstructed
+              is a judgement about this venue and its use, and this tool does not make it.
+            </p>
           </section>
         )}
 

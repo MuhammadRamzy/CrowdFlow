@@ -642,6 +642,29 @@ impl Simulation {
         self.sim.exit_specific_flow()
     }
 
+    /// The places that cost the crowd the most time, worst first.
+    ///
+    /// Flat `[x, y, personSeconds, share, ...]`, `n` entries at most. Flat
+    /// rather than a struct array because this is read every time a report is
+    /// opened and the marshalling of a typed array is a great deal cheaper
+    /// than of an object per hotspot.
+    pub fn hotspots(&self, n: usize) -> Vec<f64> {
+        let mut out = Vec::with_capacity(n * 4);
+        for h in self.sim.hotspots(n) {
+            out.push(h.x);
+            out.push(h.y);
+            out.push(h.lost_person_s);
+            out.push(h.share);
+        }
+        out
+    }
+
+    /// Total person-seconds the crowd lost to congestion.
+    #[wasm_bindgen(js_name = lostPersonSeconds)]
+    pub fn lost_person_seconds(&self) -> f64 {
+        self.sim.lost_person_s()
+    }
+
     /// The density field as bytes, one per cell, row-major.
     ///
     /// Quantised to `0..=255` over `0..maxDensity` persons/m², because this is

@@ -19,6 +19,8 @@ function data(over: Partial<ReportData> = {}): ReportData {
     egressCurve: null,
     exitUsage: null,
     compliance: null,
+    hotspots: null,
+    lostPersonS: null,
     venueName: 'Test hall',
     document: null,
     walkableArea: 240,
@@ -274,5 +276,40 @@ describe('rule packs in the dossier', () => {
     const section = screen.getByText(/NFPA 101 — Life Safety Code/).closest('section')!;
     expect(within(section).getByText('n/a')).toBeTruthy();
     expect(within(section).queryByText(/^pass$/i)).toBeNull();
+  });
+})
+
+describe('where the crowd lost time', () => {
+  const spots = [
+    { x: 6.0, y: 2.0, lostPersonS: 804, share: 0.15 },
+    { x: 6.0, y: 4.0, lostPersonS: 402, share: 0.08 },
+  ];
+
+  it('ranks the worst places with what each cost', () => {
+    render(<Report data={data({ hotspots: spots, lostPersonS: 5319 })} onClose={vi.fn()} />);
+    expect(screen.getByText(/where the crowd lost time/i)).toBeTruthy();
+    expect(screen.getByText(/804 person-s/)).toBeTruthy();
+    expect(screen.getByText(/\(6\.0, 2\.0\) m/)).toBeTruthy();
+    // Person-minutes, because that is the unit a planner acts on.
+    expect(screen.getByText(/89 person-minutes/)).toBeTruthy();
+  });
+
+  it('says it ranks rather than classifies', () => {
+    // Where the line falls between busy and obstructed is a judgement about a
+    // specific venue. Presenting a rank as a verdict would be the tool making
+    // a call it is not entitled to make.
+    render(<Report data={data({ hotspots: spots, lostPersonS: 5319 })} onClose={vi.fn()} />);
+    expect(screen.getByText(/ranked, not classified/i)).toBeTruthy();
+  });
+
+  it('explains why delay and not density', () => {
+    render(<Report data={data({ hotspots: spots, lostPersonS: 5319 })} onClose={vi.fn()} />);
+    expect(screen.getByText(/packed foyer that keeps moving is not a bottleneck/i)).toBeTruthy();
+  });
+
+  it('omits the section entirely when nothing was lost', () => {
+    // A table of places where nothing happened reads as a finding.
+    render(<Report data={data({ hotspots: [], lostPersonS: 0 })} onClose={vi.fn()} />);
+    expect(screen.queryByText(/where the crowd lost time/i)).toBeNull();
   });
 })
